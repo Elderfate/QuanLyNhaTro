@@ -21,13 +21,14 @@ export const authOptions: NextAuthOptions = {
         try {
           const emailLower = credentials.email.toLowerCase().trim();
           console.log('🔍 Looking for user:', emailLower);
+          
           const user = await NguoiDungGS.findOne({ 
             email: emailLower,
             trangThai: 'hoatDong'
           });
 
           if (!user) {
-            console.log('❌ User not found');
+            console.log('❌ User not found in Google Sheets');
             return null;
           }
 
@@ -69,6 +70,13 @@ export const authOptions: NextAuthOptions = {
           if (error instanceof Error) {
             console.error('   Error message:', error.message);
             console.error('   Error stack:', error.stack);
+            // Check if it's a Google Sheets connection error
+            if (error.message.includes('Google Sheets configuration') || 
+                error.message.includes('missing') ||
+                error.message.includes('spreadsheet')) {
+              console.error('   ⚠️ Google Sheets configuration issue - check environment variables');
+              console.error('   ⚠️ Make sure GOOGLE_SPREADSHEET_ID, GOOGLE_CLIENT_EMAIL, and GOOGLE_PRIVATE_KEY are set');
+            }
           }
           return null;
         }
