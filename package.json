@@ -50,6 +50,7 @@
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "file-saver": "^2.0.5",
+    "google-auth-library": "^9.0.0",
     "google-spreadsheet": "^5.0.2",
     "googleapis": "^166.0.0",
     "html2canvas": "^1.4.1",
