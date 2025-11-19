@@ -144,6 +144,7 @@ type KhachThueTableProps = {
   onEdit: (khachThue: KhachThue) => void
   onDelete: (id: string) => void
   actionLoading: string | null
+  onViewCCCD?: (khachThue: KhachThue) => void
 }
 
 const createColumns = (props: KhachThueTableProps): ColumnDef<KhachThue>[] => [
@@ -317,6 +318,39 @@ const createColumns = (props: KhachThueTableProps): ColumnDef<KhachThue>[] => [
     cell: ({ row }) => getStatusBadge(row.original.trangThai),
   },
   {
+    id: "anhCCCD",
+    header: "Ảnh CCCD",
+    cell: ({ row }) => {
+      const anhCCCD = row.original.anhCCCD || { matTruoc: '', matSau: '' };
+      const imageCount = (anhCCCD.matTruoc ? 1 : 0) + (anhCCCD.matSau ? 1 : 0);
+      
+      return (
+        <div>
+          {imageCount > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (props.onViewCCCD) {
+                  props.onViewCCCD(row.original);
+                } else {
+                  // Fallback to custom event for backward compatibility
+                  const event = new CustomEvent('view-cccd', { detail: row.original });
+                  window.dispatchEvent(event);
+                }
+              }}
+            >
+              <ImageIcon className="h-4 w-4 mr-1" />
+              {imageCount}
+            </Button>
+          ) : (
+            <span className="text-muted-foreground text-sm">-</span>
+          )}
+        </div>
+      )
+    },
+  },
+  {
     id: "actions",
     cell: ({ row }) => (
       <DropdownMenu>
@@ -340,8 +374,13 @@ const createColumns = (props: KhachThueTableProps): ColumnDef<KhachThue>[] => [
           {/* Xem CCCD nếu có ảnh */}
           {row.original.anhCCCD && (row.original.anhCCCD.matTruoc || row.original.anhCCCD.matSau) && (
             <DropdownMenuItem onClick={() => {
-              const event = new CustomEvent('view-cccd', { detail: row.original });
-              window.dispatchEvent(event);
+              if (props.onViewCCCD) {
+                props.onViewCCCD(row.original);
+              } else {
+                // Fallback to custom event for backward compatibility
+                const event = new CustomEvent('view-cccd', { detail: row.original });
+                window.dispatchEvent(event);
+              }
             }}>
               <ImageIcon className="mr-2 h-4 w-4" />
               Xem ảnh CCCD

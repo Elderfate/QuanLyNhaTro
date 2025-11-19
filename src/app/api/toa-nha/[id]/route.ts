@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { ToaNhaGS, PhongGS, NguoiDungGS } from '@/lib/googlesheets-models';
+import { deleteCloudinaryImages } from '@/lib/cloudinary-utils';
 import { z } from 'zod';
 
 const toaNhaSchema = z.object({
@@ -104,8 +105,24 @@ export async function PUT(
       );
     }
 
+    // Handle image deletion from Cloudinary if images were removed
+    const oldImageUrls = Array.isArray(toaNha.anhToaNha) ? toaNha.anhToaNha : [];
+    const newImageUrls = Array.isArray(body.anhToaNha) ? body.anhToaNha : [];
+    const deletedImageUrls = oldImageUrls.filter((url: string) => !newImageUrls.includes(url));
+    
+    if (deletedImageUrls.length > 0) {
+      try {
+        await deleteCloudinaryImages(deletedImageUrls);
+        console.log(`Deleted ${deletedImageUrls.length} image(s) from Cloudinary for toa nha ${id}`);
+      } catch (error) {
+        console.error('Error deleting images from Cloudinary:', error);
+        // Continue with update even if Cloudinary deletion fails
+      }
+    }
+
     const updatedToaNha = await ToaNhaGS.findByIdAndUpdate(id, {
       ...validatedData,
+      anhToaNha: newImageUrls,
       tienNghiChung: validatedData.tienNghiChung || [],
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
@@ -188,6 +205,18 @@ export async function DELETE(
         { message: 'Không thể xóa tòa nhà có phòng. Vui lòng xóa tất cả phòng trước.' },
         { status: 400 }
       );
+    }
+
+    // Delete images from Cloudinary before deleting the record
+    const imageUrls = Array.isArray(toaNha.anhToaNha) ? toaNha.anhToaNha : [];
+    if (imageUrls.length > 0) {
+      try {
+        await deleteCloudinaryImages(imageUrls);
+        console.log(`Deleted ${imageUrls.length} image(s) from Cloudinary for toa nha ${id}`);
+      } catch (error) {
+        console.error('Error deleting images from Cloudinary:', error);
+        // Continue with deletion even if Cloudinary deletion fails
+      }
     }
 
     await ToaNhaGS.findByIdAndDelete(id);

@@ -75,18 +75,60 @@ export const uploadMultipleImages = async (
 
 // Delete image from Cloudinary
 export const deleteImage = async (publicId: string): Promise<void> => {
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.warn('⚠️ Cloudinary not configured, skipping image deletion');
+    return;
+  }
+
+  if (!publicId || publicId.trim() === '') {
+    console.warn('⚠️ Empty public ID provided, skipping deletion');
+    return;
+  }
+
   try {
-    await cloudinary.uploader.destroy(publicId);
+    const result = await cloudinary.uploader.destroy(publicId);
+    if (result.result === 'not found') {
+      console.warn(`⚠️ Image not found in Cloudinary: ${publicId}`);
+    } else {
+      console.log(`✅ Successfully deleted image from Cloudinary: ${publicId}`);
+    }
   } catch (error) {
+    console.error(`❌ Error deleting image from Cloudinary (${publicId}):`, error);
     throw new Error(`Image deletion failed: ${error}`);
   }
 };
 
 // Delete multiple images
 export const deleteMultipleImages = async (publicIds: string[]): Promise<void> => {
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.warn('⚠️ Cloudinary not configured, skipping image deletion');
+    return;
+  }
+
+  if (!publicIds || publicIds.length === 0) {
+    console.warn('⚠️ No public IDs provided, skipping deletion');
+    return;
+  }
+
+  // Filter out empty IDs
+  const validPublicIds = publicIds.filter(id => id && id.trim() !== '');
+  
+  if (validPublicIds.length === 0) {
+    console.warn('⚠️ No valid public IDs provided, skipping deletion');
+    return;
+  }
+
   try {
-    await cloudinary.api.delete_resources(publicIds);
+    const result = await cloudinary.api.delete_resources(validPublicIds);
+    const deletedCount = result.deleted ? Object.keys(result.deleted).length : 0;
+    const notFoundCount = result.not_found ? result.not_found.length : 0;
+    
+    console.log(`✅ Successfully deleted ${deletedCount} image(s) from Cloudinary`);
+    if (notFoundCount > 0) {
+      console.warn(`⚠️ ${notFoundCount} image(s) not found in Cloudinary`);
+    }
   } catch (error) {
+    console.error('❌ Error deleting multiple images from Cloudinary:', error);
     throw new Error(`Multiple image deletion failed: ${error}`);
   }
 };

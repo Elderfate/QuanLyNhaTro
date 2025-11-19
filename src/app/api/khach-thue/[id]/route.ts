@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { KhachThueGS } from '@/lib/googlesheets-models';
+import { deleteCloudinaryImages } from '@/lib/cloudinary-utils';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 
@@ -79,6 +80,15 @@ export async function PUT(
 
     const { id } = await params;
 
+    // Get existing khach thue to check for deleted images
+    const existingKhachThue = await KhachThueGS.findById(id);
+    if (!existingKhachThue) {
+      return NextResponse.json(
+        { message: 'Khách thuê không tồn tại' },
+        { status: 404 }
+      );
+    }
+
     // Normalize phone number for comparison
     const normalizePhone = (phone: string | number | null | undefined): string => {
       if (!phone) return '';
@@ -94,18 +104,40 @@ export async function PUT(
 
     // Check if phone or CCCD already exists (excluding current record)
     const allKhachThue = await KhachThueGS.find();
-    const existingKhachThue = allKhachThue.find((kt: any) => {
+    const duplicateKhachThue = allKhachThue.find((kt: any) => {
       if (kt._id === id) return false;
       const normalizedStoredPhone = normalizePhone(kt.soDienThoai);
       return normalizedStoredPhone === normalizedInputPhone || 
              (kt.soCCCD || kt.cccd) === validatedData.cccd;
     });
 
-    if (existingKhachThue) {
+    if (duplicateKhachThue) {
       return NextResponse.json(
         { message: 'Số điện thoại hoặc CCCD đã được sử dụng' },
         { status: 400 }
       );
+    }
+
+    // Handle image deletion from Cloudinary if CCCD images were removed
+    const oldAnhCCCD = existingKhachThue.anhCCCD || { matTruoc: '', matSau: '' };
+    const newAnhCCCD = validatedData.anhCCCD || { matTruoc: '', matSau: '' };
+    const deletedImageUrls: string[] = [];
+    
+    if (oldAnhCCCD.matTruoc && oldAnhCCCD.matTruoc !== newAnhCCCD.matTruoc) {
+      deletedImageUrls.push(oldAnhCCCD.matTruoc);
+    }
+    if (oldAnhCCCD.matSau && oldAnhCCCD.matSau !== newAnhCCCD.matSau) {
+      deletedImageUrls.push(oldAnhCCCD.matSau);
+    }
+    
+    if (deletedImageUrls.length > 0) {
+      try {
+        await deleteCloudinaryImages(deletedImageUrls);
+        console.log(`Deleted ${deletedImageUrls.length} CCCD image(s) from Cloudinary for khach thue ${id}`);
+      } catch (error) {
+        console.error('Error deleting CCCD images from Cloudinary:', error);
+        // Continue with update even if Cloudinary deletion fails
+      }
     }
 
     // Prepare update data
@@ -114,7 +146,7 @@ export async function PUT(
       ten: validatedData.hoTen,
       hoTen: validatedData.hoTen,
       ngaySinh: validatedData.ngaySinh,
-      anhCCCD: validatedData.anhCCCD || { matTruoc: '', matSau: '' },
+      anhCCCD: newAnhCCCD,
       soCCCD: validatedData.cccd,
       cccd: validatedData.cccd,
       updatedAt: new Date().toISOString(),
@@ -185,6 +217,22 @@ export async function DELETE(
         { message: 'Khách thuê không tồn tại' },
         { status: 404 }
       );
+    }
+
+    // Delete CCCD images from Cloudinary before deleting the record
+    const anhCCCD = khachThue.anhCCCD || { matTruoc: '', matSau: '' };
+    const imageUrls: string[] = [];
+    if (anhCCCD.matTruoc) imageUrls.push(anhCCCD.matTruoc);
+    if (anhCCCD.matSau) imageUrls.push(anhCCCD.matSau);
+    
+    if (imageUrls.length > 0) {
+      try {
+        await deleteCloudinaryImages(imageUrls);
+        console.log(`Deleted ${imageUrls.length} CCCD image(s) from Cloudinary for khach thue ${id}`);
+      } catch (error) {
+        console.error('Error deleting CCCD images from Cloudinary:', error);
+        // Continue with deletion even if Cloudinary deletion fails
+      }
     }
 
     await KhachThueGS.findByIdAndDelete(id);

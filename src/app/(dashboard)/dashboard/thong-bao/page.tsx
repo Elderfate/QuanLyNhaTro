@@ -47,7 +47,7 @@ import {
   Home,
   RefreshCw
 } from 'lucide-react';
-import { ThongBao, ToaNha, Phong, KhachThue } from '@/types';
+import { ThongBao, ToaNha, Phong, KhachThue, HopDong } from '@/types';
 import { toast } from 'sonner';
 import { useDeleteThongBaoMutation } from '@/hooks/use-api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -57,7 +57,7 @@ export default function ThongBaoPage() {
   const queryClient = useQueryClient();
   
   // Use single data load
-  const { thongBao: thongBaoList, toaNha: toaNhaList, phong: phongList, khachThue: khachThueList, loading, refetch } = useData();
+  const { thongBao: thongBaoList, toaNha: toaNhaList, phong: phongList, khachThue: khachThueList, hopDong: hopDongList, loading, refetch } = useData();
   
   const deleteThongBaoMutation = useDeleteThongBaoMutation();
   
@@ -259,6 +259,7 @@ export default function ThongBaoPage() {
               toaNhaList={toaNhaList}
               phongList={phongList}
               khachThueList={khachThueList}
+              hopDongList={hopDongList}
               onClose={() => setIsDialogOpen(false)}
               onSuccess={() => {
                 queryClient.invalidateQueries({ queryKey: ['thong-bao'] });
@@ -591,6 +592,7 @@ function ThongBaoForm({
   toaNhaList,
   phongList,
   khachThueList,
+  hopDongList,
   onClose, 
   onSuccess 
 }: { 
@@ -598,6 +600,7 @@ function ThongBaoForm({
   toaNhaList: ToaNha[];
   phongList: Phong[];
   khachThueList: KhachThue[];
+  hopDongList: HopDong[];
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -611,6 +614,40 @@ function ThongBaoForm({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Get tenants for selected rooms based on active contracts
+  const getTenantsForSelectedRooms = (selectedPhongIds: string[]): KhachThue[] => {
+    if (selectedPhongIds.length === 0) return [];
+    
+    const now = new Date();
+    const tenantIds = new Set<string>();
+    
+    // Find active contracts for selected rooms
+    hopDongList.forEach((hd: any) => {
+      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      
+      if (selectedPhongIds.includes(phongId) &&
+          hd.trangThai === 'hoatDong' &&
+          ngayBatDau && ngayBatDau <= now &&
+          ngayKetThuc && ngayKetThuc >= now) {
+        // Add all tenants from this contract
+        const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [];
+        khachThueIds.forEach((id: string) => {
+          if (id) tenantIds.add(id);
+        });
+      }
+    });
+    
+    // Return tenants that are in active contracts for selected rooms
+    return khachThueList.filter((kt: KhachThue) => tenantIds.has(kt._id!));
+  };
+
+  // Filtered tenant list based on selected rooms
+  const filteredKhachThueList = formData.phong.length > 0
+    ? getTenantsForSelectedRooms(formData.phong)
+    : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -658,11 +695,19 @@ function ThongBaoForm({
   };
 
   const handlePhongChange = (phongId: string, checked: boolean) => {
+    const newPhongList = checked 
+      ? [...formData.phong, phongId]
+      : formData.phong.filter(id => id !== phongId);
+    
+    // Get tenants for new room list
+    const newTenants = getTenantsForSelectedRooms(newPhongList);
+    const newTenantIds = newTenants.map(kt => kt._id!);
+    
+    // Filter nguoiNhan to only include tenants from selected rooms
     setFormData(prev => ({
       ...prev,
-      phong: checked 
-        ? [...prev.phong, phongId]
-        : prev.phong.filter(id => id !== phongId)
+      phong: newPhongList,
+      nguoiNhan: prev.nguoiNhan.filter(id => newTenantIds.includes(id))
     }));
   };
 
@@ -747,23 +792,43 @@ function ThongBaoForm({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs md:text-sm">Người nhận</Label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-32 overflow-y-auto border rounded-md p-2">
-          {khachThueList.map((khachThue) => (
-            <div key={khachThue._id} className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id={khachThue._id}
-                checked={formData.nguoiNhan.includes(khachThue._id!)}
-                onChange={(e) => handleNguoiNhanChange(khachThue._id!, e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <Label htmlFor={khachThue._id} className="text-xs cursor-pointer truncate">
-                {khachThue.hoTen}
-              </Label>
-            </div>
-          ))}
-        </div>
+        <Label className="text-xs md:text-sm">
+          Người nhận
+          {formData.phong.length === 0 && (
+            <span className="text-muted-foreground ml-2">(Chọn phòng trước)</span>
+          )}
+        </Label>
+        {formData.phong.length === 0 ? (
+          <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
+            Vui lòng chọn phòng trước để xem danh sách khách thuê
+          </div>
+        ) : filteredKhachThueList.length === 0 ? (
+          <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
+            Không có khách thuê nào đang thuê các phòng đã chọn
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-32 overflow-y-auto border rounded-md p-2">
+            {filteredKhachThueList.map((khachThue) => (
+              <div key={khachThue._id} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id={khachThue._id}
+                  checked={formData.nguoiNhan.includes(khachThue._id!)}
+                  onChange={(e) => handleNguoiNhanChange(khachThue._id!, e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor={khachThue._id} className="text-xs cursor-pointer truncate">
+                  {khachThue.hoTen}
+                </Label>
+              </div>
+            ))}
+          </div>
+        )}
+        {formData.phong.length > 0 && filteredKhachThueList.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Đã chọn {formData.nguoiNhan.length} / {filteredKhachThueList.length} khách thuê
+          </p>
+        )}
       </div>
 
       <DialogFooter className="flex-col sm:flex-row gap-2">

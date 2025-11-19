@@ -86,7 +86,10 @@ import type { ToaNha } from '@/types'
 
 // Helper functions
 const formatAddress = (diaChi: ToaNha['diaChi']) => {
-  return `${diaChi.soNha} ${diaChi.duong}, ${diaChi.phuong}, ${diaChi.quan}, ${diaChi.thanhPho}`
+  if (typeof diaChi === 'object' && diaChi !== null) {
+    return `${diaChi.soNha || ''} ${diaChi.duong || ''}, ${diaChi.phuong || ''}, ${diaChi.quan || ''}, ${diaChi.thanhPho || ''}`.trim().replace(/\s+/g, ' ');
+  }
+  return String(diaChi || '');
 }
 
 // Create a separate component for the drag handle

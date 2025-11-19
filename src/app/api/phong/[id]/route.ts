@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { PhongGS, ToaNhaGS, HopDongGS } from '@/lib/googlesheets-models';
 import { updatePhongStatus } from '@/lib/status-utils';
+import { deleteCloudinaryImages } from '@/lib/cloudinary-utils';
 import { z } from 'zod';
 
 const phongSchema = z.object({
@@ -89,6 +90,15 @@ export async function PUT(
 
     const { id } = await params;
 
+    // Get existing phong to check for deleted images
+    const existingPhong = await PhongGS.findById(id);
+    if (!existingPhong) {
+      return NextResponse.json(
+        { message: 'Phòng không tồn tại' },
+        { status: 404 }
+      );
+    }
+
     // Check if toa nha exists
     const toaNha = await ToaNhaGS.findById(validatedData.toaNha);
     if (!toaNha) {
@@ -98,10 +108,25 @@ export async function PUT(
       );
     }
 
+    // Handle image deletion from Cloudinary if images were removed
+    const oldImageUrls = Array.isArray(existingPhong.anhPhong) ? existingPhong.anhPhong : [];
+    const newImageUrls = Array.isArray(validatedData.anhPhong) ? validatedData.anhPhong : [];
+    const deletedImageUrls = oldImageUrls.filter((url: string) => !newImageUrls.includes(url));
+    
+    if (deletedImageUrls.length > 0) {
+      try {
+        await deleteCloudinaryImages(deletedImageUrls);
+        console.log(`Deleted ${deletedImageUrls.length} image(s) from Cloudinary for phong ${id}`);
+      } catch (error) {
+        console.error('Error deleting images from Cloudinary:', error);
+        // Continue with update even if Cloudinary deletion fails
+      }
+    }
+
     // Nếu trangThai được cung cấp, dùng nó; ngược lại tự động tính toán
     const updateData: any = {
       ...validatedData,
-      anhPhong: validatedData.anhPhong || [],
+      anhPhong: newImageUrls,
       tienNghi: validatedData.tienNghi || [],
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
@@ -182,6 +207,18 @@ export async function DELETE(
         { message: 'Phòng không tồn tại' },
         { status: 404 }
       );
+    }
+
+    // Delete images from Cloudinary before deleting the record
+    const imageUrls = Array.isArray(phong.anhPhong) ? phong.anhPhong : [];
+    if (imageUrls.length > 0) {
+      try {
+        await deleteCloudinaryImages(imageUrls);
+        console.log(`Deleted ${imageUrls.length} image(s) from Cloudinary for phong ${id}`);
+      } catch (error) {
+        console.error('Error deleting images from Cloudinary:', error);
+        // Continue with deletion even if Cloudinary deletion fails
+      }
     }
 
     await PhongGS.findByIdAndDelete(id);

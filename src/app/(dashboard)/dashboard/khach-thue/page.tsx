@@ -100,6 +100,11 @@ export default function KhachThuePage() {
     setIsDialogOpen(true);
   };
 
+  const handleViewCCCD = (khachThue: KhachThue) => {
+    setViewingCCCD(khachThue);
+    setIsCCCDDialogOpen(true);
+  };
+
   const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa khách thuê này?')) {
       setActionLoading(`delete-${id}`);
@@ -244,6 +249,7 @@ export default function KhachThuePage() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             actionLoading={actionLoading}
+            onViewCCCD={handleViewCCCD}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             selectedTrangThai={selectedTrangThai}

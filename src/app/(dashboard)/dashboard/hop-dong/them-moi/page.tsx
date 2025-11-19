@@ -23,7 +23,7 @@ import {
   Check,
   ChevronsUpDown
 } from 'lucide-react';
-import { HopDong, Phong, KhachThue } from '@/types';
+import { HopDong, Phong, KhachThue, ToaNha } from '@/types';
 import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
 import { useData } from '@/hooks/use-data';
@@ -42,13 +42,53 @@ import {
 
 export default function ThemMoiHopDongPage() {
   const router = useRouter();
-  const { phong: allPhong, khachThue: allKhachThue, loading: dataLoading } = useData();
+  const { toaNha: allToaNha, phong: allPhong, khachThue: allKhachThue, hopDong: allHopDong, loading: dataLoading } = useData();
   
-  // Filter available phong (trong or daDat)
-  const phongList = allPhong.filter((phong: Phong) => 
-    phong.trangThai === 'trong' || phong.trangThai === 'daDat'
-  );
-  const khachThueList = allKhachThue;
+  const [selectedToaNha, setSelectedToaNha] = useState<string>('');
+  const [openToaNha, setOpenToaNha] = useState(false);
+  
+  // Filter rooms by selected building
+  const phongList = selectedToaNha
+    ? allPhong.filter((phong: Phong) => 
+        phong.toaNha === selectedToaNha && 
+        (phong.trangThai === 'trong' || phong.trangThai === 'daDat')
+      )
+    : allPhong.filter((phong: Phong) => 
+        phong.trangThai === 'trong' || phong.trangThai === 'daDat'
+      );
+  
+  // Filter tenants by selected room (based on active contracts)
+  const getTenantsForRoom = (roomId: string): KhachThue[] => {
+    if (!roomId) return [];
+    
+    // Get active contracts for this room
+    const now = new Date();
+    const activeContracts = allHopDong.filter((hd: any) => {
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
+      return phongId === roomId &&
+             hd.trangThai === 'hoatDong' &&
+             ngayBatDau && ngayBatDau <= now &&
+             ngayKetThuc && ngayKetThuc >= now;
+    });
+    
+    // Extract tenant IDs from active contracts
+    const tenantIds = new Set<string>();
+    activeContracts.forEach((hd: any) => {
+      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [];
+      khachThueIds.forEach((id: string) => {
+        if (id) tenantIds.add(id);
+      });
+    });
+    
+    // Return tenants that are in active contracts for this room
+    return allKhachThue.filter((kt: KhachThue) => tenantIds.has(kt._id!));
+  };
+  
+  const khachThueList = formData.phong 
+    ? getTenantsForRoom(formData.phong)
+    : allKhachThue;
   
   const [submitting, setSubmitting] = useState(false);
 
@@ -112,14 +152,29 @@ export default function ThemMoiHopDongPage() {
     }).format(amount);
   };
 
+  const handleToaNhaChange = (toaNhaId: string) => {
+    setSelectedToaNha(toaNhaId);
+    // Reset phong and khachThueId when building changes
+    setFormData(prev => ({
+      ...prev,
+      phong: '',
+      khachThueId: [],
+      nguoiDaiDien: '',
+    }));
+    setOpenToaNha(false);
+  };
+
   const handlePhongChange = (phongId: string) => {
     const selectedPhong = phongList.find(p => p._id === phongId);
     if (selectedPhong) {
+      // Reset khachThueId when room changes
       setFormData(prev => ({
         ...prev,
         phong: phongId,
         giaThue: selectedPhong.giaThue,
         tienCoc: selectedPhong.tienCoc,
+        khachThueId: [],
+        nguoiDaiDien: '',
       }));
     }
     setOpenPhong(false);
@@ -262,6 +317,49 @@ export default function ThemMoiHopDongPage() {
               </div>
               
               <div className="space-y-2">
+                <Label className="text-xs md:text-sm">Tòa nhà *</Label>
+                <Popover open={openToaNha} onOpenChange={setOpenToaNha}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openToaNha}
+                      className="w-full justify-between text-sm"
+                      size="sm"
+                    >
+                      {selectedToaNha
+                        ? allToaNha.find((toaNha: ToaNha) => toaNha._id === selectedToaNha)?.tenToaNha
+                        : "Chọn tòa nhà..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[90vw] md:w-[400px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Tìm kiếm tòa nhà..." />
+                      <CommandEmpty>Không tìm thấy tòa nhà.</CommandEmpty>
+                      <CommandGroup className="max-h-64 overflow-auto">
+                        {allToaNha.map((toaNha: ToaNha) => (
+                          <CommandItem
+                            key={toaNha._id}
+                            value={toaNha.tenToaNha}
+                            onSelect={() => handleToaNhaChange(toaNha._id!)}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                selectedToaNha === toaNha._id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {toaNha.tenToaNha}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              <div className="space-y-2">
                 <Label className="text-xs md:text-sm">Phòng *</Label>
                 <Popover open={openPhong} onOpenChange={setOpenPhong}>
                   <PopoverTrigger asChild>
@@ -271,19 +369,27 @@ export default function ThemMoiHopDongPage() {
                       aria-expanded={openPhong}
                       className="w-full justify-between text-sm"
                       size="sm"
+                      disabled={!selectedToaNha}
                     >
                       {formData.phong
                         ? phongList.find((phong) => phong._id === formData.phong)?.maPhong
-                        : "Chọn phòng..."}
+                        : selectedToaNha ? "Chọn phòng..." : "Chọn tòa nhà trước"}
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[90vw] md:w-[400px] p-0">
                     <Command>
                       <CommandInput placeholder="Tìm kiếm phòng..." />
-                      <CommandEmpty>Không tìm thấy phòng.</CommandEmpty>
+                      <CommandEmpty>
+                        {selectedToaNha ? "Không tìm thấy phòng." : "Vui lòng chọn tòa nhà trước."}
+                      </CommandEmpty>
                       <CommandGroup className="max-h-64 overflow-auto">
-                        {phongList.map((phong) => (
+                        {phongList.length === 0 && selectedToaNha ? (
+                          <div className="p-4 text-sm text-muted-foreground text-center">
+                            Không có phòng trống trong tòa nhà này
+                          </div>
+                        ) : (
+                          phongList.map((phong) => (
                           <CommandItem
                             key={phong._id}
                             value={`${phong.maPhong} ${phong.dienTich} ${phong.giaThue}`}
@@ -302,7 +408,8 @@ export default function ThemMoiHopDongPage() {
                               </span>
                             </div>
                           </CommandItem>
-                        ))}
+                        ))
+                        )}
                       </CommandGroup>
                     </Command>
                   </PopoverContent>
@@ -369,9 +476,12 @@ export default function ThemMoiHopDongPage() {
                     aria-expanded={openKhachThue}
                     className="w-full justify-between min-h-10 h-auto text-sm"
                     size="sm"
+                    disabled={!formData.phong}
                   >
                     <div className="flex flex-wrap gap-1 text-xs md:text-sm">
-                      {formData.khachThueId.length === 0 ? (
+                      {!formData.phong ? (
+                        <span className="text-muted-foreground">Chọn phòng trước</span>
+                      ) : formData.khachThueId.length === 0 ? (
                         <span className="text-muted-foreground">Chọn khách thuê...</span>
                       ) : (
                         formData.khachThueId.map((id) => {
@@ -390,9 +500,18 @@ export default function ThemMoiHopDongPage() {
                   <PopoverContent className="w-[90vw] md:w-full p-0">
                     <Command>
                       <CommandInput placeholder="Tìm kiếm khách thuê..." className="text-sm" />
-                      <CommandEmpty className="text-sm">Không tìm thấy khách thuê.</CommandEmpty>
+                      <CommandEmpty className="text-sm">
+                        {formData.phong 
+                          ? "Không tìm thấy khách thuê cho phòng này." 
+                          : "Vui lòng chọn phòng trước."}
+                      </CommandEmpty>
                       <CommandGroup className="max-h-64 overflow-auto">
-                      {khachThueList.map((khachThue) => (
+                      {khachThueList.length === 0 && formData.phong ? (
+                        <div className="p-4 text-sm text-muted-foreground text-center">
+                          Không có khách thuê nào đang thuê phòng này
+                        </div>
+                      ) : (
+                        khachThueList.map((khachThue) => (
                         <CommandItem
                           key={khachThue._id}
                           value={khachThue.hoTen}
@@ -413,7 +532,8 @@ export default function ThemMoiHopDongPage() {
                             </span>
                           </div>
                         </CommandItem>
-                      ))}
+                      ))
+                      )}
                     </CommandGroup>
                   </Command>
                 </PopoverContent>

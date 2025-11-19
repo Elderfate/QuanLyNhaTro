@@ -40,6 +40,7 @@ import {
   Camera,
   Copy,
   Search,
+  Image as ImageIcon,
 } from "lucide-react"
 import {
   ColumnDef,
@@ -168,6 +169,7 @@ type HoaDonTableProps = {
   onShare: (hoaDon: HoaDon) => void
   onPayment: (hoaDon: HoaDon) => void
   onDeleteMultiple?: (ids: string[]) => void
+  onViewImages?: (hoaDon: HoaDon) => void
 }
 
 const getPhongName = (phong: string | { maPhong: string }, phongList: Phong[]) => {
@@ -293,6 +295,33 @@ const createColumns = (props: HoaDonTableProps): ColumnDef<HoaDon>[] => [
     ),
   },
   {
+    id: "images",
+    header: "Ảnh",
+    cell: ({ row }) => {
+      // Check if invoice has images (from payment records or invoice itself)
+      const hoaDon = row.original as any;
+      const imageUrls = hoaDon.anhChungTu || hoaDon.anhThanhToan || hoaDon.images || [];
+      const imageCount = Array.isArray(imageUrls) ? imageUrls.length : 0;
+      
+      return (
+        <div>
+          {imageCount > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => props.onViewImages?.(row.original)}
+            >
+              <ImageIcon className="h-4 w-4 mr-1" />
+              {imageCount}
+            </Button>
+          ) : (
+            <span className="text-muted-foreground text-sm">-</span>
+          )}
+        </div>
+      )
+    },
+  },
+  {
     id: "actions",
     cell: ({ row }) => (
       <DropdownMenu>
@@ -307,6 +336,17 @@ const createColumns = (props: HoaDonTableProps): ColumnDef<HoaDon>[] => [
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
+          {(() => {
+            const hoaDon = row.original as any;
+            const imageUrls = hoaDon.anhChungTu || hoaDon.anhThanhToan || hoaDon.images || [];
+            const imageCount = Array.isArray(imageUrls) ? imageUrls.length : 0;
+            return imageCount > 0 ? (
+              <DropdownMenuItem onClick={() => props.onViewImages?.(row.original)}>
+                <ImageIcon className="mr-2 h-4 w-4" />
+                Xem ảnh ({imageCount})
+              </DropdownMenuItem>
+            ) : null;
+          })()}
           <DropdownMenuItem onClick={() => props.onView(row.original)}>
             <Eye className="mr-2 h-4 w-4" />
             Xem chi tiết

@@ -41,7 +41,8 @@ import {
   Users,
   Home,
   Edit,
-  Trash2
+  Trash2,
+  Image
 } from 'lucide-react';
 import { HoaDon, HopDong, Phong, KhachThue } from '@/types';
 import { toast } from 'sonner';
@@ -101,6 +102,9 @@ export default function HoaDonPage() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [paymentHoaDon, setPaymentHoaDon] = useState<HoaDon | null>(null);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [viewingImagesHoaDon, setViewingImagesHoaDon] = useState<HoaDon | null>(null);
+  const [isImagesDialogOpen, setIsImagesDialogOpen] = useState(false);
+  const [invoiceImages, setInvoiceImages] = useState<string[]>([]);
 
   useEffect(() => {
     document.title = 'Quản lý Hóa đơn';
@@ -188,6 +192,48 @@ export default function HoaDonPage() {
   const handleView = (hoaDon: HoaDon) => {
     setViewingHoaDon(hoaDon);
     setIsViewDialogOpen(true);
+  };
+
+  const handleViewImages = async (hoaDon: HoaDon) => {
+    setViewingImagesHoaDon(hoaDon);
+    
+    // Get images from invoice or payment records
+    const hoaDonAny = hoaDon as any;
+    let images: string[] = [];
+    
+    // Check if invoice has direct image field
+    if (hoaDonAny.anhChungTu && Array.isArray(hoaDonAny.anhChungTu)) {
+      images = hoaDonAny.anhChungTu;
+    } else if (hoaDonAny.anhThanhToan && Array.isArray(hoaDonAny.anhThanhToan)) {
+      images = hoaDonAny.anhThanhToan;
+    } else if (hoaDonAny.images && Array.isArray(hoaDonAny.images)) {
+      images = hoaDonAny.images;
+    } else {
+      // Try to fetch payment records for this invoice
+      try {
+        const response = await fetch(`/api/thanh-toan?hoaDon=${hoaDon._id}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            const payments = Array.isArray(result.data) ? result.data : [result.data];
+            payments.forEach((payment: any) => {
+              if (payment.anhBienLai) {
+                if (Array.isArray(payment.anhBienLai)) {
+                  images.push(...payment.anhBienLai);
+                } else {
+                  images.push(payment.anhBienLai);
+                }
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching payment images:', error);
+      }
+    }
+    
+    setInvoiceImages(images);
+    setIsImagesDialogOpen(true);
   };
 
   const handlePayment = (hoaDon: HoaDon) => {
@@ -311,16 +357,27 @@ export default function HoaDonPage() {
 
   const handleScreenshot = async (hoaDon: HoaDon) => {
     try {
+      toast.info('Đang tạo PDF...');
+      
       // Tạo element tạm thời để chụp ảnh
       const tempElement = document.createElement('div');
+      tempElement.style.position = 'absolute';
+      tempElement.style.left = '-9999px';
+      tempElement.style.top = '-9999px';
+      tempElement.style.width = '800px';
+      tempElement.style.padding = '40px';
+      tempElement.style.background = '#ffffff';
+      tempElement.style.fontFamily = 'Arial, sans-serif';
+      tempElement.style.border = '1px solid #dddddd';
+      tempElement.style.color = '#000000';
+      tempElement.style.overflow = 'visible';
+      
       tempElement.innerHTML = `
         <div style="
-          width: 800px; 
-          padding: 40px; 
+          width: 100%; 
+          padding: 0; 
           background: #ffffff; 
           font-family: Arial, sans-serif;
-          border: 1px solid #dddddd;
-          margin: 20px;
           color: #000000;
         ">
           <!-- Header -->
@@ -414,40 +471,48 @@ export default function HoaDonPage() {
         </div>
       `;
       
-      tempElement.style.position = 'absolute';
-      tempElement.style.left = '-9999px';
-      tempElement.style.top = '-9999px';
       document.body.appendChild(tempElement);
 
-      // Chụp ảnh
-      const canvas = await html2canvas(tempElement, {
+      // Đợi element được render hoàn toàn
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Chụp ảnh với các options cải thiện
+      const canvas = await html2canvas(tempElement.firstElementChild as HTMLElement, {
         scale: 2,
         useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff'
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: 800,
+        height: tempElement.scrollHeight,
+        windowWidth: 800,
+        windowHeight: tempElement.scrollHeight,
       });
 
       // Xóa element tạm thời
       document.body.removeChild(tempElement);
 
       // Tạo PDF
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/png', 1.0);
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210;
-      const pageHeight = 295;
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth - 20; // Margin 10mm each side
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
       let heightLeft = imgHeight;
+      let position = 10; // Top margin
 
-      let position = 0;
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - 20); // Subtract page height minus margins
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
+      // Add additional pages if needed
+      while (heightLeft > 0) {
+        position = -heightLeft + 10; // Adjust position for next page
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - 20);
       }
 
       // Tải xuống PDF
@@ -455,7 +520,7 @@ export default function HoaDonPage() {
       toast.success('Đã xuất hóa đơn thành PDF thành công!');
     } catch (error) {
       console.error('Error generating PDF:', error);
-      toast.error('Có lỗi xảy ra khi xuất PDF');
+      toast.error(`Có lỗi xảy ra khi xuất PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -600,6 +665,7 @@ export default function HoaDonPage() {
             onDelete={handleDelete}
             onDeleteMultiple={handleDeleteMultiple}
             onPayment={handlePayment}
+            onViewImages={handleViewImages}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             statusFilter={statusFilter}
@@ -950,6 +1016,53 @@ export default function HoaDonPage() {
               }}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Images Viewer Dialog */}
+      <Dialog open={isImagesDialogOpen} onOpenChange={setIsImagesDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden w-[95vw] md:w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base md:text-lg">
+              <Image className="h-4 w-4 md:h-5 md:w-5" />
+              Ảnh chứng từ hóa đơn {viewingImagesHoaDon?.maHoaDon}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden">
+            {invoiceImages.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 max-h-[60vh] overflow-y-auto">
+                {invoiceImages.map((imageUrl, index) => (
+                  <div key={index} className="relative">
+                    <img
+                      src={imageUrl}
+                      alt={`Ảnh chứng từ ${index + 1}`}
+                      className="w-full h-auto object-contain rounded-lg border border-gray-200"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/placeholder-image.png';
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center p-8 text-center">
+                <div>
+                  <Image className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                  <p className="text-sm text-gray-500">Không có ảnh chứng từ</p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <div className="text-xs md:text-sm text-gray-600">
+              {invoiceImages.length} ảnh
+            </div>
+            <Button variant="outline" onClick={() => setIsImagesDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
