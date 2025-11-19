@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const phiDichVuSchema = z.object({
   ten: z.string().min(1, 'Tên dịch vụ là bắt buộc'),
-  gia: z.number().min(0, 'Giá dịch vụ phải lớn hơn hoặc bằng 0'),
+  gia: z.coerce.number().min(0, 'Giá dịch vụ phải lớn hơn hoặc bằng 0'),
 });
 
 const hopDongSchema = z.object({
@@ -16,15 +16,15 @@ const hopDongSchema = z.object({
   nguoiDaiDien: z.string().min(1, 'Người đại diện là bắt buộc'),
   ngayBatDau: z.string().min(1, 'Ngày bắt đầu là bắt buộc'),
   ngayKetThuc: z.string().min(1, 'Ngày kết thúc là bắt buộc'),
-  giaThue: z.number().min(0, 'Giá thuê phải lớn hơn hoặc bằng 0'),
-  tienCoc: z.number().min(0, 'Tiền cọc phải lớn hơn hoặc bằng 0'),
+  giaThue: z.coerce.number().min(0, 'Giá thuê phải lớn hơn hoặc bằng 0'),
+  tienCoc: z.coerce.number().min(0, 'Tiền cọc phải lớn hơn hoặc bằng 0'),
   chuKyThanhToan: z.enum(['thang', 'quy', 'nam']),
-  ngayThanhToan: z.number().min(1).max(31, 'Ngày thanh toán phải từ 1-31'),
+  ngayThanhToan: z.coerce.number().min(1).max(31, 'Ngày thanh toán phải từ 1-31'),
   dieuKhoan: z.string().min(1, 'Điều khoản là bắt buộc'),
-  giaDien: z.number().min(0, 'Giá điện phải lớn hơn hoặc bằng 0'),
-  giaNuoc: z.number().min(0, 'Giá nước phải lớn hơn hoặc bằng 0'),
-  chiSoDienBanDau: z.number().min(0, 'Chỉ số điện ban đầu phải lớn hơn hoặc bằng 0'),
-  chiSoNuocBanDau: z.number().min(0, 'Chỉ số nước ban đầu phải lớn hơn hoặc bằng 0'),
+  giaDien: z.coerce.number().min(0, 'Giá điện phải lớn hơn hoặc bằng 0'),
+  giaNuoc: z.coerce.number().min(0, 'Giá nước phải lớn hơn hoặc bằng 0'),
+  chiSoDienBanDau: z.coerce.number().min(0, 'Chỉ số điện ban đầu phải lớn hơn hoặc bằng 0'),
+  chiSoNuocBanDau: z.coerce.number().min(0, 'Chỉ số nước ban đầu phải lớn hơn hoặc bằng 0'),
   phiDichVu: z.array(phiDichVuSchema).optional(),
   fileHopDong: z.string().optional(),
 });

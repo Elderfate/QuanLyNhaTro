@@ -114,20 +114,78 @@ export async function DELETE(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const publicId = searchParams.get('publicId');
+    const url = searchParams.get('url');
+    const urls = searchParams.get('urls'); // Comma-separated URLs
 
-    if (!publicId) {
-      return NextResponse.json(
-        { message: 'Public ID is required' },
-        { status: 400 }
-      );
+    // Hỗ trợ xóa bằng publicId (cũ)
+    if (publicId) {
+      await deleteImage(publicId);
+      return NextResponse.json({
+        success: true,
+        message: 'Đã xóa ảnh thành công'
+      });
     }
 
-    await deleteImage(publicId);
+    // Hỗ trợ xóa bằng URL (mới)
+    if (url) {
+      const { extractPublicId, deleteImage: deleteImg } = await import('@/lib/cloudinary');
+      const publicIdFromUrl = extractPublicId(url);
+      if (publicIdFromUrl) {
+        await deleteImg(publicIdFromUrl);
+        return NextResponse.json({
+          success: true,
+          message: 'Đã xóa ảnh thành công'
+        });
+      }
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Đã xóa ảnh thành công'
-    });
+    // Hỗ trợ xóa nhiều ảnh bằng URLs
+    if (urls) {
+      const urlArray = urls.split(',').filter(u => u.trim() !== '');
+      const { extractPublicId, deleteMultipleImages } = await import('@/lib/cloudinary');
+      const publicIds = urlArray
+        .map(u => extractPublicId(u.trim()))
+        .filter(id => id !== '');
+      
+      if (publicIds.length > 0) {
+        if (publicIds.length === 1) {
+          const { deleteImage: deleteImg } = await import('@/lib/cloudinary');
+          await deleteImg(publicIds[0]);
+        } else {
+          await deleteMultipleImages(publicIds);
+        }
+        return NextResponse.json({
+          success: true,
+          message: `Đã xóa ${publicIds.length} ảnh thành công`
+        });
+      }
+    }
+
+    // Hỗ trợ xóa bằng body (POST với body chứa URLs)
+    const body = await request.json().catch(() => null);
+    if (body && body.urls && Array.isArray(body.urls)) {
+      const { extractPublicId, deleteMultipleImages, deleteImage: deleteImg } = await import('@/lib/cloudinary');
+      const publicIds = body.urls
+        .map((u: string) => extractPublicId(u))
+        .filter((id: string) => id !== '');
+      
+      if (publicIds.length > 0) {
+        if (publicIds.length === 1) {
+          await deleteImg(publicIds[0]);
+        } else {
+          await deleteMultipleImages(publicIds);
+        }
+        return NextResponse.json({
+          success: true,
+          message: `Đã xóa ${publicIds.length} ảnh thành công`
+        });
+      }
+    }
+
+    return NextResponse.json(
+      { message: 'Public ID hoặc URL(s) is required' },
+      { status: 400 }
+    );
 
   } catch (error: any) {
     console.error('Error deleting image:', error);

@@ -40,6 +40,7 @@ import {
   Search,
   Users,
   Home,
+  Image as ImageIcon,
 } from "lucide-react"
 import {
   ColumnDef,
@@ -324,6 +325,16 @@ const createColumns = (props: ThanhToanTableProps): ColumnDef<ThanhToanPopulated
             <DropdownMenuItem onClick={() => props.onView!(row.original)}>
               <Eye className="mr-2 h-4 w-4" />
               Xem chi tiết
+            </DropdownMenuItem>
+          )}
+          {/* Xem ảnh biên lai nếu có */}
+          {row.original.anhBienLai && (
+            <DropdownMenuItem onClick={() => {
+              const event = new CustomEvent('view-payment-image', { detail: row.original });
+              window.dispatchEvent(event);
+            }}>
+              <ImageIcon className="mr-2 h-4 w-4" />
+              Xem ảnh biên lai
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={() => props.onEdit(row.original)}>

@@ -44,6 +44,7 @@ import {
   Key,
   Check,
   X,
+  Image as ImageIcon,
 } from "lucide-react"
 import {
   ColumnDef,
@@ -337,13 +338,13 @@ const createColumns = (props: KhachThueTableProps): ColumnDef<KhachThue>[] => [
             </DropdownMenuItem>
           )}
           {/* Xem CCCD nếu có ảnh */}
-          {row.original.anhCCCD && (
+          {row.original.anhCCCD && (row.original.anhCCCD.matTruoc || row.original.anhCCCD.matSau) && (
             <DropdownMenuItem onClick={() => {
               const event = new CustomEvent('view-cccd', { detail: row.original });
               window.dispatchEvent(event);
             }}>
-              <Eye className="mr-2 h-4 w-4" />
-              Xem CCCD
+              <ImageIcon className="mr-2 h-4 w-4" />
+              Xem ảnh CCCD
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={() => props.onEdit(row.original)}>

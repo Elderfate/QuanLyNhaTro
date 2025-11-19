@@ -80,9 +80,23 @@ export default function ThanhToanPage() {
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingThanhToan, setEditingThanhToan] = useState<ThanhToanPopulated | null>(null);
+  const [viewingPaymentImage, setViewingPaymentImage] = useState<ThanhToanPopulated | null>(null);
+  const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
 
   useEffect(() => {
     document.title = 'Quản lý Thanh toán';
+    
+    // Lắng nghe event xem ảnh thanh toán
+    const handleViewPaymentImage = (event: Event) => {
+      const customEvent = event as CustomEvent<ThanhToanPopulated>;
+      setViewingPaymentImage(customEvent.detail);
+      setIsImageDialogOpen(true);
+    };
+    
+    window.addEventListener('view-payment-image', handleViewPaymentImage);
+    return () => {
+      window.removeEventListener('view-payment-image', handleViewPaymentImage);
+    };
   }, []);
 
   const handleRefresh = async () => {
@@ -484,6 +498,38 @@ export default function ThanhToanPage() {
           </div>
         )}
       </div>
+
+      {/* Payment Image Viewer Dialog */}
+      <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Xem ảnh biên lai</DialogTitle>
+            <DialogDescription>
+              Mã thanh toán: {viewingPaymentImage?.maThanhToan || 'N/A'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {viewingPaymentImage?.anhBienLai ? (
+              <div className="relative aspect-[16/10] rounded-lg overflow-hidden border">
+                <img
+                  src={viewingPaymentImage.anhBienLai}
+                  alt="Ảnh biên lai"
+                  className="w-full h-full object-contain bg-gray-50"
+                />
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Không có ảnh biên lai
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImageDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -541,6 +587,17 @@ function ThanhToanForm({
   }, [thanhToan]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Track original image URL to detect deletions
+  const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(thanhToan?.anhBienLai || null);
+
+  // Update original URL when thanhToan changes
+  useEffect(() => {
+    if (thanhToan?.anhBienLai) {
+      setOriginalImageUrl(thanhToan.anhBienLai);
+    } else {
+      setOriginalImageUrl(null);
+    }
+  }, [thanhToan]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -549,6 +606,29 @@ function ThanhToanForm({
     
     setIsSubmitting(true);
     try {
+      // Xóa ảnh đã bị xóa trên Cloudinary
+      if (thanhToan && originalImageUrl && (!formData.anhBienLai || formData.anhBienLai !== originalImageUrl)) {
+        try {
+          toast.info('Đang xóa ảnh biên lai cũ trên Cloudinary...');
+          const deleteResponse = await fetch('/api/upload', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ urls: [originalImageUrl] }),
+          });
+          
+          if (deleteResponse.ok) {
+            toast.success('Đã xóa ảnh biên lai cũ trên Cloudinary');
+          } else {
+            console.warn('Failed to delete image from Cloudinary');
+          }
+        } catch (deleteError) {
+          console.error('Error deleting image from Cloudinary:', deleteError);
+          // Không block flow chính nếu xóa Cloudinary thất bại
+        }
+      }
+
       const requestData = {
         hoaDonId: formData.hoaDon,
         soTien: formData.soTien,
@@ -687,12 +767,18 @@ function ThanhToanForm({
         />
       </div>
 
-      <ImageUpload
-        imageUrl={formData.anhBienLai}
-        onImageChange={(url) => setFormData(prev => ({ ...prev, anhBienLai: url }))}
-        label="Ảnh biên lai"
-        placeholder="Chọn ảnh biên lai thanh toán"
-      />
+      <div className="space-y-2">
+        <Label className="text-xs md:text-sm">Ảnh biên lai</Label>
+        <ImageUpload
+          imageUrl={formData.anhBienLai}
+          onImageChange={(url) => {
+            // Nếu xóa ảnh (url rỗng) và có original URL, sẽ xóa trên Cloudinary khi submit
+            setFormData(prev => ({ ...prev, anhBienLai: url }));
+          }}
+          label=""
+          placeholder="Chọn ảnh biên lai thanh toán"
+        />
+      </div>
 
       <DialogFooter className="flex-col sm:flex-row gap-2">
         <Button 

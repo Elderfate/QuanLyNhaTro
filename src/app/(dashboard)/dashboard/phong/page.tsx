@@ -624,6 +624,8 @@ function PhongForm({
 
   // Combined state for all images: existing URLs (string) and new files (File)
   const [allImages, setAllImages] = useState<(File | string)[]>([]);
+  // Track original images to detect deletions
+  const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([]);
 
   // Cập nhật formData khi phong thay đổi
   useEffect(() => {
@@ -634,6 +636,7 @@ function PhongForm({
       console.log('toaNha object:', phong.toaNha);
       console.log('toaNha ID:', toaNhaId);
       
+      const existingUrls = phong.anhPhong || [];
       setFormData({
         maPhong: phong.maPhong || '',
         toaNha: toaNhaId,
@@ -642,13 +645,14 @@ function PhongForm({
         giaThue: phong.giaThue || 0,
         tienCoc: phong.tienCoc || 0,
         moTa: phong.moTa || '',
-        anhPhong: phong.anhPhong || [], // Existing URLs
+        anhPhong: existingUrls, // Existing URLs
         tienNghi: phong.tienNghi || [],
         soNguoiToiDa: phong.soNguoiToiDa || 1,
         trangThai: phong.trangThai || 'trong',
       });
-      // Set existing URLs as strings
-      setAllImages(phong.anhPhong || []);
+      // Set existing URLs as strings and track original
+      setAllImages(existingUrls);
+      setOriginalImageUrls(existingUrls);
     } else {
       setFormData({
         maPhong: '',
@@ -664,6 +668,7 @@ function PhongForm({
         trangThai: 'trong',
       });
       setAllImages([]);
+      setOriginalImageUrls([]);
     }
   }, [phong]);
 
@@ -737,10 +742,36 @@ function PhongForm({
         toast.success(`Upload ${uploadedImageUrls.length} ảnh thành công!`);
       }
 
-      // Step 3: Merge existing URLs with newly uploaded URLs
+      // Step 3: Xóa ảnh đã bị xóa trên Cloudinary
+      if (phong && originalImageUrls.length > 0) {
+        const deletedUrls = originalImageUrls.filter(url => !existingUrls.includes(url));
+        if (deletedUrls.length > 0) {
+          try {
+            toast.info(`Đang xóa ${deletedUrls.length} ảnh cũ trên Cloudinary...`);
+            const deleteResponse = await fetch('/api/upload', {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ urls: deletedUrls }),
+            });
+            
+            if (deleteResponse.ok) {
+              toast.success(`Đã xóa ${deletedUrls.length} ảnh cũ trên Cloudinary`);
+            } else {
+              console.warn('Failed to delete some images from Cloudinary');
+            }
+          } catch (deleteError) {
+            console.error('Error deleting images from Cloudinary:', deleteError);
+            // Không block flow chính nếu xóa Cloudinary thất bại
+          }
+        }
+      }
+
+      // Step 4: Merge existing URLs with newly uploaded URLs
       const allImageUrls = [...existingUrls, ...uploadedImageUrls];
 
-      // Step 3: Submit form with all image URLs
+      // Step 5: Submit form with all image URLs
       const url = phong ? `/api/phong/${phong._id}` : '/api/phong';
       const method = phong ? 'PUT' : 'POST';
 

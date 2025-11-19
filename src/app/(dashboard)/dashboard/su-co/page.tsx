@@ -510,14 +510,18 @@ function SuCoForm({
   const [selectedPhong, setSelectedPhong] = useState<any>(null);
   const [newImageFiles, setNewImageFiles] = useState<File[]>([]); // New files to upload
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>(suCo?.anhSuCo || []); // Existing URLs when editing
+  const [originalImageUrls, setOriginalImageUrls] = useState<string[]>(suCo?.anhSuCo || []); // Track original URLs to detect deletions
 
   // Update existing URLs when suCo changes
   useEffect(() => {
     if (suCo?.anhSuCo) {
-      setExistingImageUrls(suCo.anhSuCo);
+      const urls = suCo.anhSuCo || [];
+      setExistingImageUrls(urls);
+      setOriginalImageUrls(urls);
       setNewImageFiles([]);
     } else {
       setExistingImageUrls([]);
+      setOriginalImageUrls([]);
       setNewImageFiles([]);
     }
   }, [suCo]);
@@ -570,7 +574,33 @@ function SuCoForm({
         toast.success(`Upload ${uploadedImageUrls.length} ảnh thành công!`);
       }
 
-      // Step 2: Merge existing URLs with newly uploaded URLs
+      // Step 2: Xóa ảnh đã bị xóa trên Cloudinary
+      if (suCo && originalImageUrls.length > 0) {
+        const deletedUrls = originalImageUrls.filter(url => !existingImageUrls.includes(url));
+        if (deletedUrls.length > 0) {
+          try {
+            toast.info(`Đang xóa ${deletedUrls.length} ảnh cũ trên Cloudinary...`);
+            const deleteResponse = await fetch('/api/upload', {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ urls: deletedUrls }),
+            });
+            
+            if (deleteResponse.ok) {
+              toast.success(`Đã xóa ${deletedUrls.length} ảnh cũ trên Cloudinary`);
+            } else {
+              console.warn('Failed to delete some images from Cloudinary');
+            }
+          } catch (deleteError) {
+            console.error('Error deleting images from Cloudinary:', deleteError);
+            // Không block flow chính nếu xóa Cloudinary thất bại
+          }
+        }
+      }
+
+      // Step 3: Merge existing URLs with newly uploaded URLs
       const allImageUrls = [...existingImageUrls, ...uploadedImageUrls];
 
       // Step 3: Prepare data for API

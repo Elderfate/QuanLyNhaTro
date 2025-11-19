@@ -388,8 +388,12 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error deleting hoa don:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return NextResponse.json(
-      { message: 'Internal server error' },
+      { 
+        success: false,
+        message: errorMessage || 'Có lỗi xảy ra khi xóa hóa đơn' 
+      },
       { status: 500 }
     );
   }

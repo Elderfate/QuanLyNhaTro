@@ -118,15 +118,16 @@ export function CCCDUpload({
   };
 
   return (
-    <div className={`space-y-6 ${className}`}>
-      <div className="flex items-center gap-2 mb-4">
+    <div className={`space-y-4 ${className}`}>
+      <div className="flex items-center gap-2">
         <CreditCard className="h-5 w-5 text-blue-600" />
         <h3 className="text-lg font-medium">Ảnh CCCD</h3>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Grid layout giống PhongImageUpload */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Mặt trước */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">
               Mặt trước CCCD
@@ -145,7 +146,7 @@ export function CCCDUpload({
               onClick={() => matTruocInputRef.current?.click()}
             >
               <Upload className="h-4 w-4 mr-2" />
-              Chọn ảnh
+              {previewUrls.matTruoc ? 'Thay đổi' : 'Chọn ảnh'}
             </Button>
           </div>
 
@@ -163,6 +164,11 @@ export function CCCDUpload({
                       {(anhCCCD.matTruoc.size / 1024 / 1024).toFixed(2)} MB
                     </div>
                   )}
+                  {typeof anhCCCD.matTruoc === 'string' && (
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
+                      Ảnh hiện có
+                    </div>
+                  )}
                   <Button
                     type="button"
                     variant="destructive"
@@ -177,8 +183,8 @@ export function CCCDUpload({
             </Card>
           ) : (
             <Card className="border-dashed border-2 border-gray-300">
-              <CardContent className="flex flex-col items-center justify-center py-6">
-                <ImageIcon className="h-8 w-8 text-gray-400 mb-2" />
+              <CardContent className="flex flex-col items-center justify-center py-8">
+                <ImageIcon className="h-12 w-12 text-gray-400 mb-3" />
                 <p className="text-gray-500 text-sm text-center">
                   Chưa có ảnh CCCD mặt trước
                 </p>
@@ -188,7 +194,7 @@ export function CCCDUpload({
         </div>
 
         {/* Mặt sau */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">
               Mặt sau CCCD
@@ -207,7 +213,7 @@ export function CCCDUpload({
               onClick={() => matSauInputRef.current?.click()}
             >
               <Upload className="h-4 w-4 mr-2" />
-              Chọn ảnh
+              {previewUrls.matSau ? 'Thay đổi' : 'Chọn ảnh'}
             </Button>
           </div>
 
@@ -225,6 +231,11 @@ export function CCCDUpload({
                       {(anhCCCD.matSau.size / 1024 / 1024).toFixed(2)} MB
                     </div>
                   )}
+                  {typeof anhCCCD.matSau === 'string' && (
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
+                      Ảnh hiện có
+                    </div>
+                  )}
                   <Button
                     type="button"
                     variant="destructive"
@@ -239,8 +250,8 @@ export function CCCDUpload({
             </Card>
           ) : (
             <Card className="border-dashed border-2 border-gray-300">
-              <CardContent className="flex flex-col items-center justify-center py-6">
-                <ImageIcon className="h-8 w-8 text-gray-400 mb-2" />
+              <CardContent className="flex flex-col items-center justify-center py-8">
+                <ImageIcon className="h-12 w-12 text-gray-400 mb-3" />
                 <p className="text-gray-500 text-sm text-center">
                   Chưa có ảnh CCCD mặt sau
                 </p>

@@ -28,12 +28,20 @@ export async function GET() {
       });
     
     // Log for debugging
-    console.log(`[Users API] Returning ${usersWithoutPassword.length} users`);
+    console.log(`[Users API] Total users found: ${users.length}`);
+    console.log(`[Users API] Returning ${usersWithoutPassword.length} users (after password removal)`);
     console.log(`[Users API] Admin users:`, usersWithoutPassword.filter((u: any) => 
       u.role === 'admin' || u.vaiTro === 'admin'
     ).length);
+    console.log(`[Users API] Sample user:`, usersWithoutPassword[0] ? {
+      _id: usersWithoutPassword[0]._id,
+      email: usersWithoutPassword[0].email,
+      role: usersWithoutPassword[0].role,
+      vaiTro: usersWithoutPassword[0].vaiTro,
+    } : 'No users');
     
-    return NextResponse.json(usersWithoutPassword);
+    // Return as array, not object
+    return NextResponse.json(Array.isArray(usersWithoutPassword) ? usersWithoutPassword : []);
   } catch (error) {
     console.error('Error fetching users:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

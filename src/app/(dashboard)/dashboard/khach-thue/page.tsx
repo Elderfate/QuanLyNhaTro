@@ -483,12 +483,29 @@ function KhachThueForm({
     gioiTinh: khachThue?.gioiTinh || 'nam',
     queQuan: khachThue?.queQuan || '',
     anhCCCD: {
-      matTruoc: khachThue?.anhCCCD.matTruoc || '',
-      matSau: khachThue?.anhCCCD.matSau || '',
+      matTruoc: (khachThue?.anhCCCD?.matTruoc as string) || null,
+      matSau: (khachThue?.anhCCCD?.matSau as string) || null,
     },
     ngheNghiep: khachThue?.ngheNghiep || '',
     matKhau: '',
   });
+  // Track original CCCD URLs to detect deletions
+  const [originalCCCDUrls, setOriginalCCCDUrls] = useState<{ matTruoc: string | null; matSau: string | null }>({
+    matTruoc: (khachThue?.anhCCCD?.matTruoc as string) || null,
+    matSau: (khachThue?.anhCCCD?.matSau as string) || null
+  });
+
+  // Update original URLs when khachThue changes
+  useEffect(() => {
+    if (khachThue) {
+      setOriginalCCCDUrls({
+        matTruoc: (khachThue.anhCCCD?.matTruoc as string) || null,
+        matSau: (khachThue.anhCCCD?.matSau as string) || null
+      });
+    } else {
+      setOriginalCCCDUrls({ matTruoc: null, matSau: null });
+    }
+  }, [khachThue]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -548,7 +565,55 @@ function KhachThueForm({
         }
       }
 
-      // Step 2: Submit form with uploaded URLs
+      // Step 2: Xóa ảnh CCCD đã bị xóa trên Cloudinary
+      if (khachThue && (originalCCCDUrls.matTruoc || originalCCCDUrls.matSau)) {
+        const deletedUrls: string[] = [];
+        
+        // Check matTruoc - nếu original có nhưng hiện tại không có hoặc là File mới
+        const currentMatTruoc = typeof formData.anhCCCD.matTruoc === 'string' ? formData.anhCCCD.matTruoc : null;
+        if (originalCCCDUrls.matTruoc) {
+          // Chỉ xóa nếu không phải là File mới (File mới sẽ được upload) và URL đã thay đổi
+          if (!(formData.anhCCCD.matTruoc instanceof File)) {
+            if (!currentMatTruoc || currentMatTruoc !== originalCCCDUrls.matTruoc) {
+              deletedUrls.push(originalCCCDUrls.matTruoc);
+            }
+          }
+        }
+        
+        // Check matSau
+        const currentMatSau = typeof formData.anhCCCD.matSau === 'string' ? formData.anhCCCD.matSau : null;
+        if (originalCCCDUrls.matSau) {
+          if (!(formData.anhCCCD.matSau instanceof File)) {
+            if (!currentMatSau || currentMatSau !== originalCCCDUrls.matSau) {
+              deletedUrls.push(originalCCCDUrls.matSau);
+            }
+          }
+        }
+        
+        if (deletedUrls.length > 0) {
+          try {
+            toast.info(`Đang xóa ${deletedUrls.length} ảnh CCCD cũ trên Cloudinary...`);
+            const deleteResponse = await fetch('/api/upload', {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ urls: deletedUrls }),
+            });
+            
+            if (deleteResponse.ok) {
+              toast.success(`Đã xóa ${deletedUrls.length} ảnh CCCD cũ trên Cloudinary`);
+            } else {
+              console.warn('Failed to delete some CCCD images from Cloudinary');
+            }
+          } catch (deleteError) {
+            console.error('Error deleting CCCD images from Cloudinary:', deleteError);
+            // Không block flow chính nếu xóa Cloudinary thất bại
+          }
+        }
+      }
+
+      // Step 3: Submit form with uploaded URLs
       const url = khachThue ? `/api/khach-thue/${khachThue._id}` : '/api/khach-thue';
       const method = khachThue ? 'PUT' : 'POST';
 
@@ -556,8 +621,8 @@ function KhachThueForm({
       const submitData = { 
         ...formData,
         anhCCCD: {
-          matTruoc: matTruocUrl || '',
-          matSau: matSauUrl || ''
+          matTruoc: (typeof matTruocUrl === 'string' ? matTruocUrl : '') || '',
+          matSau: (typeof matSauUrl === 'string' ? matSauUrl : '') || ''
         }
       };
       if (!submitData.matKhau || submitData.matKhau.trim() === '') {
