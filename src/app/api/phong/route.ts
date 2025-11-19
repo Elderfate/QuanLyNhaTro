@@ -8,14 +8,15 @@ import { z } from 'zod';
 const phongSchema = z.object({
   maPhong: z.string().min(1, 'Mã phòng là bắt buộc'),
   toaNha: z.string().min(1, 'Tòa nhà là bắt buộc'),
-  tang: z.number().min(0, 'Tầng phải lớn hơn hoặc bằng 0'),
-  dienTich: z.number().min(1, 'Diện tích phải lớn hơn 0'),
-  giaThue: z.number().min(0, 'Giá thuê phải lớn hơn hoặc bằng 0'),
-  tienCoc: z.number().min(0, 'Tiền cọc phải lớn hơn hoặc bằng 0'),
+  tang: z.coerce.number().min(0, 'Tầng phải lớn hơn hoặc bằng 0'),
+  dienTich: z.coerce.number().min(1, 'Diện tích phải lớn hơn 0'),
+  giaThue: z.coerce.number().min(0, 'Giá thuê phải lớn hơn hoặc bằng 0'),
+  tienCoc: z.coerce.number().min(0, 'Tiền cọc phải lớn hơn hoặc bằng 0'),
   moTa: z.string().optional(),
   anhPhong: z.array(z.string()).optional(),
   tienNghi: z.array(z.string()).optional(),
-  soNguoiToiDa: z.number().min(1, 'Số người tối đa phải lớn hơn 0').max(10, 'Số người tối đa không được quá 10'),
+  soNguoiToiDa: z.coerce.number().min(1, 'Số người tối đa phải lớn hơn 0').max(10, 'Số người tối đa không được quá 10'),
+  trangThai: z.enum(['trong', 'daDat', 'dangThue', 'baoTri']).optional(),
 });
 
 export async function POST(request: NextRequest) {

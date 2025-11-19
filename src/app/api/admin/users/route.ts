@@ -15,6 +15,7 @@ export async function GET() {
     const users = await NguoiDungGS.find();
     
     // Remove password fields and sort by createdAt
+    // Return ALL users (including inactive ones) - let frontend filter if needed
     const usersWithoutPassword = users
       .map((user: any) => {
         const { password, matKhau, ...userWithoutPassword } = user;
@@ -25,6 +26,12 @@ export async function GET() {
         const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return dateB - dateA;
       });
+    
+    // Log for debugging
+    console.log(`[Users API] Returning ${usersWithoutPassword.length} users`);
+    console.log(`[Users API] Admin users:`, usersWithoutPassword.filter((u: any) => 
+      u.role === 'admin' || u.vaiTro === 'admin'
+    ).length);
     
     return NextResponse.json(usersWithoutPassword);
   } catch (error) {

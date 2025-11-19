@@ -3,16 +3,38 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Home, FileText, AlertCircle, MapPin, Calendar, DollarSign, Phone, Mail } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Home, FileText, AlertCircle, MapPin, Calendar, DollarSign, Phone, Mail, Bell, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function KhachThueDashboardPage() {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
 
   useEffect(() => {
     fetchDashboardData();
+    fetchNotifications();
   }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setNotificationsLoading(true);
+      // Fetch system notifications (public)
+      const response = await fetch('/api/notifications?type=system&limit=5');
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setNotifications(result.data || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -233,6 +255,48 @@ export default function KhachThueDashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Thông báo */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Thông báo
+          </CardTitle>
+          <CardDescription>Thông báo từ quản lý</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {notificationsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            </div>
+          ) : notifications.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">Chưa có thông báo nào</p>
+          ) : (
+            <div className="space-y-3">
+              {notifications.map((notif) => (
+                <div
+                  key={notif.id}
+                  className="p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-sm">{notif.title}</h4>
+                      <p className="text-sm text-gray-600 mt-1">{notif.message}</p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        {formatDate(notif.createdAt)}
+                      </p>
+                    </div>
+                    {notif.priority === 'high' && (
+                      <Badge variant="destructive" className="ml-2">Quan trọng</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Thông tin liên hệ */}
       <Card>

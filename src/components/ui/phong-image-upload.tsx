@@ -7,9 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Upload, X, Image as ImageIcon, Home } from 'lucide-react';
 import { toast } from 'sonner';
 
+type ImageItem = File | string; // Hỗ trợ cả File (mới) và string (URL hiện có)
+
 interface PhongImageUploadProps {
-  images: File[]; // Changed from string[] to File[]
-  onImagesChange: (images: File[]) => void;
+  images: ImageItem[]; // Hỗ trợ cả File objects và URL strings
+  onImagesChange: (images: ImageItem[]) => void;
   className?: string;
   maxImages?: number;
 }
@@ -23,22 +25,33 @@ export function PhongImageUpload({
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Create preview URLs from File objects
+  // Create preview URLs from File objects or use existing URLs
   useEffect(() => {
     if (images.length === 0) {
       setPreviewUrls([]);
       return;
     }
 
-    const urls = images
-      .filter(file => file instanceof File)
-      .map(file => URL.createObjectURL(file));
+    const urls: string[] = [];
+    const blobUrls: string[] = [];
+
+    images.forEach((item) => {
+      if (item instanceof File) {
+        // Tạo blob URL cho File mới
+        const blobUrl = URL.createObjectURL(item);
+        urls.push(blobUrl);
+        blobUrls.push(blobUrl);
+      } else if (typeof item === 'string' && item.trim() !== '') {
+        // Dùng URL hiện có trực tiếp
+        urls.push(item);
+      }
+    });
     
     setPreviewUrls(urls);
 
-    // Cleanup: revoke object URLs when component unmounts or images change
+    // Cleanup: revoke object URLs khi component unmount hoặc images thay đổi
     return () => {
-      urls.forEach(url => {
+      blobUrls.forEach(url => {
         if (url) {
           URL.revokeObjectURL(url);
         }
@@ -83,8 +96,10 @@ export function PhongImageUpload({
   };
 
   const removeImage = (index: number) => {
-    // Revoke preview URL
-    if (previewUrls[index]) {
+    const item = images[index];
+    
+    // Revoke preview URL nếu là File object
+    if (item instanceof File && previewUrls[index]) {
       URL.revokeObjectURL(previewUrls[index]);
     }
     
@@ -156,9 +171,16 @@ export function PhongImageUpload({
                   >
                     <X className="h-3 w-3" />
                   </Button>
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
-                    </div>
+                    {file instanceof File && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
+                        {(file.size / 1024 / 1024).toFixed(2)} MB
+                      </div>
+                    )}
+                    {typeof file === 'string' && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
+                        Ảnh hiện có
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

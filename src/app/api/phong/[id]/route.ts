@@ -8,14 +8,15 @@ import { z } from 'zod';
 const phongSchema = z.object({
   maPhong: z.string().min(1, 'Mã phòng là bắt buộc'),
   toaNha: z.string().min(1, 'Tòa nhà là bắt buộc'),
-  tang: z.number().min(0, 'Tầng phải lớn hơn hoặc bằng 0'),
-  dienTich: z.number().min(1, 'Diện tích phải lớn hơn 0'),
-  giaThue: z.number().min(0, 'Giá thuê phải lớn hơn hoặc bằng 0'),
-  tienCoc: z.number().min(0, 'Tiền cọc phải lớn hơn hoặc bằng 0'),
+  tang: z.coerce.number().min(0, 'Tầng phải lớn hơn hoặc bằng 0'),
+  dienTich: z.coerce.number().min(1, 'Diện tích phải lớn hơn 0'),
+  giaThue: z.coerce.number().min(0, 'Giá thuê phải lớn hơn hoặc bằng 0'),
+  tienCoc: z.coerce.number().min(0, 'Tiền cọc phải lớn hơn hoặc bằng 0'),
   moTa: z.string().optional(),
   anhPhong: z.array(z.string()).optional(),
   tienNghi: z.array(z.string()).optional(),
-  soNguoiToiDa: z.number().min(1, 'Số người tối đa phải lớn hơn 0').max(10, 'Số người tối đa không được quá 10'),
+  soNguoiToiDa: z.coerce.number().min(1, 'Số người tối đa phải lớn hơn 0').max(10, 'Số người tối đa không được quá 10'),
+  trangThai: z.enum(['trong', 'daDat', 'dangThue', 'baoTri']).optional(),
 });
 
 export async function GET(
@@ -97,13 +98,25 @@ export async function PUT(
       );
     }
 
-    const phong = await PhongGS.findByIdAndUpdate(id, {
+    // Nếu trangThai được cung cấp, dùng nó; ngược lại tự động tính toán
+    const updateData: any = {
       ...validatedData,
       anhPhong: validatedData.anhPhong || [],
       tienNghi: validatedData.tienNghi || [],
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
-    });
+    };
+
+    // Nếu không có trangThai trong request, tự động tính toán
+    if (!validatedData.trangThai) {
+      // Tính toán trạng thái dựa trên hợp đồng
+      const { calculatePhongStatus } = await import('@/lib/status-utils');
+      const calculatedStatus = await calculatePhongStatus(id);
+      updateData.trangThai = calculatedStatus;
+    }
+    // Nếu có trangThai trong request, dùng giá trị đó (override thủ công)
+
+    const phong = await PhongGS.findByIdAndUpdate(id, updateData);
 
     if (!phong) {
       return NextResponse.json(
@@ -111,9 +124,6 @@ export async function PUT(
         { status: 404 }
       );
     }
-
-    // Cập nhật trạng thái dựa trên hợp đồng sau khi cập nhật phòng
-    await updatePhongStatus(id);
 
     // Lấy lại dữ liệu với trạng thái đã cập nhật
     const updatedPhong = await PhongGS.findById(id);

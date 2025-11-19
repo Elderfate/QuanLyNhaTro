@@ -104,6 +104,29 @@ function populateRelationships(
   const khachThueMap = new Map(khachThue.map((kt: any) => [kt._id, kt]));
   const hopDongMap = new Map(hopDong.map((hd: any) => [hd._id, hd]));
 
+  // Tính thống kê phòng cho mỗi tòa nhà
+  const toaNhaStats = new Map<string, { tongSoPhong: number; phongTrong: number; phongDangThue: number; phongBaoTri: number }>();
+  
+  phong.forEach((p: any) => {
+    const toaNhaId = p.toaNha;
+    if (!toaNhaId) return;
+    
+    if (!toaNhaStats.has(toaNhaId)) {
+      toaNhaStats.set(toaNhaId, { tongSoPhong: 0, phongTrong: 0, phongDangThue: 0, phongBaoTri: 0 });
+    }
+    
+    const stats = toaNhaStats.get(toaNhaId)!;
+    stats.tongSoPhong++;
+    
+    if (p.trangThai === 'trong') {
+      stats.phongTrong++;
+    } else if (p.trangThai === 'dangThue') {
+      stats.phongDangThue++;
+    } else if (p.trangThai === 'baoTri') {
+      stats.phongBaoTri++;
+    }
+  });
+
   // Populate phong with toaNha
   const phongWithToaNha = phong.map((p: any) => {
     const toaNhaData = p.toaNha ? toaNhaMap.get(p.toaNha) : null;
@@ -291,7 +314,7 @@ function populateRelationships(
     };
   });
 
-  // Normalize tienNghiChung for toaNha (ensure it's always an array)
+  // Normalize tienNghiChung for toaNha và thêm thống kê phòng
   const toaNhaNormalized = toaNha.map((tn: any) => {
     let tienNghiChung = tn.tienNghiChung;
     if (typeof tienNghiChung === 'string') {
@@ -304,9 +327,30 @@ function populateRelationships(
     if (!Array.isArray(tienNghiChung)) {
       tienNghiChung = [];
     }
+    
+    // Lấy thống kê phòng cho tòa nhà này
+    const stats = toaNhaStats.get(tn._id) || { tongSoPhong: 0, phongTrong: 0, phongDangThue: 0, phongBaoTri: 0 };
+    
+    // Đảm bảo diaChi là object, không phải undefined
+    let diaChi = tn.diaChi;
+    if (!diaChi || typeof diaChi !== 'object') {
+      diaChi = {
+        soNha: '',
+        duong: '',
+        phuong: '',
+        quan: '',
+        thanhPho: ''
+      };
+    }
+    
     return {
       ...tn,
       tienNghiChung,
+      tongSoPhong: stats.tongSoPhong,
+      phongTrong: stats.phongTrong,
+      phongDangThue: stats.phongDangThue,
+      phongBaoTri: stats.phongBaoTri,
+      diaChi, // Đảm bảo diaChi luôn là object hợp lệ
     };
   });
 

@@ -622,8 +622,8 @@ function PhongForm({
     trangThai: phong?.trangThai || 'trong',
   });
 
-  // Separate state for new files to upload
-  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
+  // Combined state for all images: existing URLs (string) and new files (File)
+  const [allImages, setAllImages] = useState<(File | string)[]>([]);
 
   // Cập nhật formData khi phong thay đổi
   useEffect(() => {
@@ -647,7 +647,8 @@ function PhongForm({
         soNguoiToiDa: phong.soNguoiToiDa || 1,
         trangThai: phong.trangThai || 'trong',
       });
-      setNewImageFiles([]); // Reset new files when editing
+      // Set existing URLs as strings
+      setAllImages(phong.anhPhong || []);
     } else {
       setFormData({
         maPhong: '',
@@ -662,6 +663,7 @@ function PhongForm({
         soNguoiToiDa: 1,
         trangThai: 'trong',
       });
+      setAllImages([]);
     }
   }, [phong]);
 
@@ -699,13 +701,17 @@ function PhongForm({
     
     setIsSubmitting(true);
     try {
-      // Step 1: Upload new image files to Cloudinary
+      // Step 1: Tách File objects và URL strings
+      const newFiles = allImages.filter((img): img is File => img instanceof File);
+      const existingUrls = allImages.filter((img): img is string => typeof img === 'string');
+
+      // Step 2: Upload new image files to Cloudinary
       let uploadedImageUrls: string[] = [];
       
-      if (newImageFiles.length > 0) {
-        toast.info(`Đang upload ${newImageFiles.length} ảnh...`);
+      if (newFiles.length > 0) {
+        toast.info(`Đang upload ${newFiles.length} ảnh...`);
         
-        const uploadPromises = newImageFiles.map(async (file) => {
+        const uploadPromises = newFiles.map(async (file) => {
           const formData = new FormData();
           formData.append('file', file);
 
@@ -731,15 +737,21 @@ function PhongForm({
         toast.success(`Upload ${uploadedImageUrls.length} ảnh thành công!`);
       }
 
-      // Step 2: Merge existing URLs with newly uploaded URLs
-      const allImageUrls = [...formData.anhPhong, ...uploadedImageUrls];
+      // Step 3: Merge existing URLs with newly uploaded URLs
+      const allImageUrls = [...existingUrls, ...uploadedImageUrls];
 
       // Step 3: Submit form with all image URLs
       const url = phong ? `/api/phong/${phong._id}` : '/api/phong';
       const method = phong ? 'PUT' : 'POST';
 
+      // Đảm bảo tất cả số được convert đúng kiểu
       const submitData = {
         ...formData,
+        tang: Number(formData.tang) || 0,
+        dienTich: Number(formData.dienTich) || 0,
+        giaThue: Number(formData.giaThue) || 0,
+        tienCoc: Number(formData.tienCoc) || 0,
+        soNguoiToiDa: Number(formData.soNguoiToiDa) || 1,
         anhPhong: allImageUrls,
       };
 
@@ -961,32 +973,11 @@ function PhongForm({
             </div>
             
             <PhongImageUpload
-              images={newImageFiles}
-              onImagesChange={setNewImageFiles}
+              images={allImages}
+              onImagesChange={setAllImages}
               maxImages={10}
               className="w-full"
             />
-            {/* Show existing images when editing */}
-            {phong && formData.anhPhong.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <p className="text-sm font-medium text-gray-700">Ảnh hiện có:</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {formData.anhPhong.map((imageUrl, index) => (
-                    <Card key={index} className="relative">
-                      <CardContent className="p-2">
-                        <div className="relative aspect-square rounded-md overflow-hidden bg-gray-100">
-                          <img
-                            src={imageUrl}
-                            alt={`Ảnh ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </TabsContent>
       </Tabs>

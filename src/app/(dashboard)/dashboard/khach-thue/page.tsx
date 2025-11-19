@@ -63,9 +63,23 @@ export default function KhachThuePage() {
   const [editingKhachThue, setEditingKhachThue] = useState<KhachThue | null>(null);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [viewingCCCD, setViewingCCCD] = useState<KhachThue | null>(null);
+  const [isCCCDDialogOpen, setIsCCCDDialogOpen] = useState(false);
 
   useEffect(() => {
     document.title = 'Quản lý Khách thuê';
+    
+    // Lắng nghe event xem CCCD
+    const handleViewCCCD = (event: Event) => {
+      const customEvent = event as CustomEvent<KhachThue>;
+      setViewingCCCD(customEvent.detail);
+      setIsCCCDDialogOpen(true);
+    };
+    
+    window.addEventListener('view-cccd', handleViewCCCD);
+    return () => {
+      window.removeEventListener('view-cccd', handleViewCCCD);
+    };
   }, []);
 
   const handleRefresh = async () => {
@@ -394,6 +408,54 @@ export default function KhachThuePage() {
           </div>
         )}
       </div>
+
+      {/* CCCD Viewer Dialog */}
+      <Dialog open={isCCCDDialogOpen} onOpenChange={setIsCCCDDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Xem ảnh CCCD - {viewingCCCD?.hoTen}</DialogTitle>
+            <DialogDescription>
+              CCCD: {viewingCCCD?.cccd}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            {viewingCCCD?.anhCCCD?.matTruoc && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Mặt trước</Label>
+                <div className="relative aspect-[16/10] rounded-lg overflow-hidden border">
+                  <img
+                    src={viewingCCCD.anhCCCD.matTruoc}
+                    alt="CCCD mặt trước"
+                    className="w-full h-full object-contain bg-gray-50"
+                  />
+                </div>
+              </div>
+            )}
+            {viewingCCCD?.anhCCCD?.matSau && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Mặt sau</Label>
+                <div className="relative aspect-[16/10] rounded-lg overflow-hidden border">
+                  <img
+                    src={viewingCCCD.anhCCCD.matSau}
+                    alt="CCCD mặt sau"
+                    className="w-full h-full object-contain bg-gray-50"
+                  />
+                </div>
+              </div>
+            )}
+            {(!viewingCCCD?.anhCCCD?.matTruoc && !viewingCCCD?.anhCCCD?.matSau) && (
+              <div className="col-span-2 text-center py-8 text-gray-500">
+                Không có ảnh CCCD
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCCCDDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -336,6 +336,16 @@ const createColumns = (props: KhachThueTableProps): ColumnDef<KhachThue>[] => [
               Xem chi tiết
             </DropdownMenuItem>
           )}
+          {/* Xem CCCD nếu có ảnh */}
+          {row.original.anhCCCD && (
+            <DropdownMenuItem onClick={() => {
+              const event = new CustomEvent('view-cccd', { detail: row.original });
+              window.dispatchEvent(event);
+            }}>
+              <Eye className="mr-2 h-4 w-4" />
+              Xem CCCD
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => props.onEdit(row.original)}>
             <Edit className="mr-2 h-4 w-4" />
             Chỉnh sửa
