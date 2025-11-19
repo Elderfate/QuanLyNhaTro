@@ -47,3 +47,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Google Service Account JSON keys - KHÔNG BAO GIỜ COMMIT
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!components.json
+!eslint.config.mjs
+!postcss.config.mjs
