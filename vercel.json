@@ -5,6 +5,7 @@
   "installCommand": "npm install --legacy-peer-deps",
   "env": {
     "NEXTAUTH_URL": "https://quanlynhatro.vercel.app",
+    "NEXTAUTH_SECRET": "CjIjSu55LVoHzicVsCHXxuTO96rOmNAxVW/UzxuWys4=",
     "NODE_ENV": "production"
   },
   "functions": {

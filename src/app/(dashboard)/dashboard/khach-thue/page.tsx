@@ -91,7 +91,7 @@ export default function KhachThuePage() {
       setActionLoading(`delete-${id}`);
       try {
         await deleteKhachThueMutation.mutateAsync(id);
-        toast.success('Xóa khách thuê thành công!');
+            toast.success('Xóa khách thuê thành công!');
       } catch (error) {
         console.error('Error deleting khach thue:', error);
         toast.error('Có lỗi xảy ra khi xóa khách thuê');
@@ -681,8 +681,8 @@ function KhachThueForm({
           disabled={isSubmitting} 
           className="w-full sm:w-auto"
         >
-          <span className="hidden sm:inline">{khachThue ? 'Cập nhật' : 'Thêm mới'}</span>
-          <span className="sm:hidden">{khachThue ? 'Cập nhật' : 'Thêm mới'}</span>
+              <span className="hidden sm:inline">{khachThue ? 'Cập nhật' : 'Thêm mới'}</span>
+              <span className="sm:hidden">{khachThue ? 'Cập nhật' : 'Thêm mới'}</span>
         </Button>
       </DialogFooter>
     </form>
