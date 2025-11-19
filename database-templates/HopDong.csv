@@ -1,0 +1,3 @@
+_id,maHopDong,phong,khachThueId,nguoiDaiDien,ngayBatDau,ngayKetThuc,giaThue,tienCoc,chuKyThanhToan,ngayThanhToan,dieuKhoan,giaDien,giaNuoc,chiSoDienBanDau,chiSoNuocBanDau,phiDichVu,trangThai,fileHopDong,ngayTao,ngayCapNhat,createdAt,updatedAt
+hopdong_001,HD001,phong_001,"[""khachthue_001""]",khachthue_001,2024-01-01T00:00:00.000Z,2024-12-31T23:59:59.999Z,3500000,7000000,thang,5,Điều khoản hợp đồng thuê phòng trọ,3500,15000,0,0,"[]",hoatDong,,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+

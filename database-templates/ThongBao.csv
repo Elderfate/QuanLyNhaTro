@@ -1,0 +1,3 @@
+_id,tieuDe,noiDung,loai,nguoiGui,nguoiNhan,phong,toaNha,daDoc,ngayGui,ngayTao,createdAt,updatedAt
+thongbao_001,Thông báo chung,Thông báo về việc bảo trì hệ thống điện nước,chung,user_admin_001,"[""khachthue_001""]","[]",toanha_001,"[]",2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+

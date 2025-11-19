@@ -1,0 +1,3 @@
+_id,hoTen,soDienThoai,email,cccd,ngaySinh,gioiTinh,queQuan,anhCCCD,ngheNghiep,matKhau,trangThai,ngayTao,ngayCapNhat,createdAt,updatedAt
+khachthue_001,Nguyễn Văn A,0987654321,nguyenvana@example.com,001234567890,1990-01-01T00:00:00.000Z,nam,Hà Nội,"{""matTruoc"":"""",""matSau"":""""}",Sinh viên,,chuaThue,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+

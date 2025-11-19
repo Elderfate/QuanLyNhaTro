@@ -1,0 +1,384 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import {
+  ToaNhaGS,
+  PhongGS,
+  KhachThueGS,
+  HopDongGS,
+  HoaDonGS,
+  ThanhToanGS,
+  SuCoGS,
+  ThongBaoGS,
+  NguoiDungGS,
+} from '@/lib/googlesheets-models';
+
+// Calculate dashboard stats
+function calculateStats(
+  allPhong: any[],
+  allHoaDon: any[],
+  allSuCo: any[],
+  allHopDong: any[],
+  allThanhToan: any[]
+) {
+  const currentDate = new Date();
+  const currentMonth = currentDate.getMonth() + 1;
+  const currentYear = currentDate.getFullYear();
+
+  // Calculate room stats
+  const totalPhong = allPhong.length;
+  const phongTrong = allPhong.filter((p: any) => p.trangThai === 'trong').length;
+  const phongDangThue = allPhong.filter((p: any) => p.trangThai === 'dangThue').length;
+  const phongBaoTri = allPhong.filter((p: any) => p.trangThai === 'baoTri').length;
+
+  // Calculate revenue stats
+  const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
+  const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59);
+
+  const thanhToanThang = allThanhToan.filter((tt: any) => {
+    const ngayThanhToan = new Date(tt.ngayThanhToan);
+    return ngayThanhToan >= startOfMonth && ngayThanhToan <= endOfMonth;
+  });
+  const doanhThuThang = thanhToanThang.reduce((sum: number, tt: any) => sum + (tt.soTien || 0), 0);
+
+  const startOfYear = new Date(currentYear, 0, 1);
+  const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59);
+
+  const thanhToanNam = allThanhToan.filter((tt: any) => {
+    const ngayThanhToan = new Date(tt.ngayThanhToan);
+    return ngayThanhToan >= startOfYear && ngayThanhToan <= endOfYear;
+  });
+  const doanhThuNam = thanhToanNam.reduce((sum: number, tt: any) => sum + (tt.soTien || 0), 0);
+
+  // Calculate pending invoices (due in next 7 days)
+  const nextWeek = new Date();
+  nextWeek.setDate(nextWeek.getDate() + 7);
+
+  const hoaDonSapDenHan = allHoaDon.filter((hd: any) => {
+    const hanThanhToan = new Date(hd.hanThanhToan);
+    return (
+      hanThanhToan <= nextWeek &&
+      ['chuaThanhToan', 'daThanhToanMotPhan'].includes(hd.trangThai)
+    );
+  }).length;
+
+  // Calculate pending issues
+  const suCoCanXuLy = allSuCo.filter((sc: any) => ['moi', 'dangXuLy'].includes(sc.trangThai)).length;
+
+  // Calculate contracts expiring in next 30 days
+  const nextMonth = new Date();
+  nextMonth.setDate(nextMonth.getDate() + 30);
+
+  const hopDongSapHetHan = allHopDong.filter((hd: any) => {
+    const ngayKetThuc = new Date(hd.ngayKetThuc);
+    return ngayKetThuc <= nextMonth && hd.trangThai === 'hoatDong';
+  }).length;
+
+  return {
+    tongSoPhong: totalPhong,
+    phongTrong,
+    phongDangThue,
+    phongBaoTri,
+    doanhThuThang,
+    doanhThuNam,
+    hoaDonSapDenHan,
+    suCoCanXuLy,
+    hopDongSapHetHan,
+  };
+}
+
+// Pre-populate relationships
+function populateRelationships(
+  toaNha: any[],
+  phong: any[],
+  khachThue: any[],
+  hopDong: any[],
+  hoaDon: any[],
+  thanhToan: any[],
+  suCo: any[],
+  thongBao: any[]
+) {
+  // Create Maps for O(1) lookup
+  const toaNhaMap = new Map(toaNha.map((t: any) => [t._id, t]));
+  const phongMap = new Map(phong.map((p: any) => [p._id, p]));
+  const khachThueMap = new Map(khachThue.map((kt: any) => [kt._id, kt]));
+  const hopDongMap = new Map(hopDong.map((hd: any) => [hd._id, hd]));
+
+  // Populate phong with toaNha
+  const phongWithToaNha = phong.map((p: any) => {
+    const toaNhaData = p.toaNha ? toaNhaMap.get(p.toaNha) : null;
+    return {
+      ...p,
+      toaNha: toaNhaData
+        ? {
+            _id: toaNhaData._id,
+            tenToaNha: toaNhaData.tenToaNha,
+            diaChi: toaNhaData.diaChi,
+          }
+        : null,
+    };
+  });
+
+  // Populate hopDong with phong and khachThue
+  const hopDongWithRelations = hopDong.map((hd: any) => {
+    const phongData = hd.phong ? phongMap.get(hd.phong) : null;
+    const khachThueData = hd.khachThue ? khachThueMap.get(hd.khachThue) : null;
+    return {
+      ...hd,
+      phong: phongData
+        ? {
+            _id: phongData._id,
+            maPhong: phongData.maPhong,
+            toaNha: phongData.toaNha,
+          }
+        : null,
+      khachThue: khachThueData
+        ? {
+            _id: khachThueData._id,
+            hoTen: khachThueData.hoTen || khachThueData.ten,
+            soDienThoai: khachThueData.soDienThoai,
+          }
+        : null,
+    };
+  });
+
+  // Populate hoaDon with hopDong
+  const hoaDonWithHopDong = hoaDon.map((hd: any) => {
+    const hopDongData = hd.hopDong ? hopDongMap.get(hd.hopDong) : null;
+    return {
+      ...hd,
+      hopDong: hopDongData
+        ? {
+            _id: hopDongData._id,
+            maHopDong: hopDongData.maHopDong,
+            phong: hopDongData.phong,
+            khachThue: hopDongData.khachThue,
+          }
+        : null,
+    };
+  });
+
+  // Populate thanhToan with hoaDon
+  const hoaDonMap = new Map(hoaDon.map((hd: any) => [hd._id, hd]));
+  const thanhToanWithHoaDon = thanhToan.map((tt: any) => {
+    const hoaDonData = tt.hoaDon ? hoaDonMap.get(tt.hoaDon) : null;
+    return {
+      ...tt,
+      hoaDon: hoaDonData
+        ? {
+            _id: hoaDonData._id,
+            maHoaDon: hoaDonData.maHoaDon,
+            hopDong: hoaDonData.hopDong,
+          }
+        : null,
+    };
+  });
+
+  // Populate suCo with phong and khachThue
+  const suCoWithRelations = suCo.map((sc: any) => {
+    const phongData = sc.phong ? phongMap.get(sc.phong) : null;
+    const khachThueData = sc.khachThue ? khachThueMap.get(sc.khachThue) : null;
+    return {
+      ...sc,
+      phong: phongData
+        ? {
+            _id: phongData._id,
+            maPhong: phongData.maPhong,
+          }
+        : null,
+      khachThue: khachThueData
+        ? {
+            _id: khachThueData._id,
+            hoTen: khachThueData.hoTen || khachThueData.ten,
+          }
+        : null,
+    };
+  });
+
+  // Populate thongBao with phong and khachThue (handle arrays)
+  const thongBaoWithRelations = thongBao.map((tb: any) => {
+    // Handle nguoiNhan (can be array of khachThue IDs)
+    let nguoiNhan = [];
+    if (tb.nguoiNhan) {
+      if (Array.isArray(tb.nguoiNhan)) {
+        nguoiNhan = tb.nguoiNhan.map((id: string) => {
+          const kt = khachThueMap.get(id);
+          return kt
+            ? {
+                _id: kt._id,
+                hoTen: kt.hoTen || kt.ten,
+                soDienThoai: kt.soDienThoai,
+              }
+            : null;
+        }).filter(Boolean);
+      } else if (typeof tb.nguoiNhan === 'string') {
+        try {
+          const parsed = JSON.parse(tb.nguoiNhan);
+          if (Array.isArray(parsed)) {
+            nguoiNhan = parsed.map((id: string) => {
+              const kt = khachThueMap.get(id);
+              return kt
+                ? {
+                    _id: kt._id,
+                    hoTen: kt.hoTen || kt.ten,
+                    soDienThoai: kt.soDienThoai,
+                  }
+                : null;
+            }).filter(Boolean);
+          }
+        } catch {
+          // If not JSON, treat as single ID
+          const kt = khachThueMap.get(tb.nguoiNhan);
+          if (kt) {
+            nguoiNhan = [
+              {
+                _id: kt._id,
+                hoTen: kt.hoTen || kt.ten,
+                soDienThoai: kt.soDienThoai,
+              },
+            ];
+          }
+        }
+      }
+    }
+
+    // Handle phong (can be array of phong IDs)
+    let phongList = [];
+    if (tb.phong) {
+      if (Array.isArray(tb.phong)) {
+        phongList = tb.phong.map((id: string) => {
+          const p = phongMap.get(id);
+          return p
+            ? {
+                _id: p._id,
+                maPhong: p.maPhong,
+              }
+            : null;
+        }).filter(Boolean);
+      } else if (typeof tb.phong === 'string') {
+        try {
+          const parsed = JSON.parse(tb.phong);
+          if (Array.isArray(parsed)) {
+            phongList = parsed.map((id: string) => {
+              const p = phongMap.get(id);
+              return p
+                ? {
+                    _id: p._id,
+                    maPhong: p.maPhong,
+                  }
+                : null;
+            }).filter(Boolean);
+          }
+        } catch {
+          // If not JSON, treat as single ID
+          const p = phongMap.get(tb.phong);
+          if (p) {
+            phongList = [
+              {
+                _id: p._id,
+                maPhong: p.maPhong,
+              },
+            ];
+          }
+        }
+      }
+    }
+
+    return {
+      ...tb,
+      nguoiNhan,
+      phong: phongList,
+    };
+  });
+
+  // Normalize tienNghiChung for toaNha (ensure it's always an array)
+  const toaNhaNormalized = toaNha.map((tn: any) => {
+    let tienNghiChung = tn.tienNghiChung;
+    if (typeof tienNghiChung === 'string') {
+      try {
+        tienNghiChung = JSON.parse(tienNghiChung);
+      } catch {
+        tienNghiChung = [];
+      }
+    }
+    if (!Array.isArray(tienNghiChung)) {
+      tienNghiChung = [];
+    }
+    return {
+      ...tn,
+      tienNghiChung,
+    };
+  });
+
+  return {
+    toaNha: toaNhaNormalized,
+    phong: phongWithToaNha,
+    khachThue,
+    hopDong: hopDongWithRelations,
+    hoaDon: hoaDonWithHopDong,
+    thanhToan: thanhToanWithHoaDon,
+    suCo: suCoWithRelations,
+    thongBao: thongBaoWithRelations,
+  };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session) {
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Load ALL data in parallel
+    const [
+      allToaNha,
+      allPhong,
+      allKhachThue,
+      allHopDong,
+      allHoaDon,
+      allThanhToan,
+      allSuCo,
+      allThongBao,
+      allUsers,
+    ] = await Promise.all([
+      ToaNhaGS.find(),
+      PhongGS.find(),
+      KhachThueGS.find(),
+      HopDongGS.find(),
+      HoaDonGS.find(),
+      ThanhToanGS.find(),
+      SuCoGS.find(),
+      ThongBaoGS.find(),
+      NguoiDungGS.find(),
+    ]);
+
+    // Calculate stats
+    const stats = calculateStats(allPhong, allHoaDon, allSuCo, allHopDong, allThanhToan);
+
+    // Populate relationships
+    const populatedData = populateRelationships(
+      allToaNha,
+      allPhong,
+      allKhachThue,
+      allHopDong,
+      allHoaDon,
+      allThanhToan,
+      allSuCo,
+      allThongBao
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...populatedData,
+        users: allUsers,
+        stats,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching app data:', error);
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+  }
+}
+

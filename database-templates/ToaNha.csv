@@ -1,0 +1,3 @@
+_id,tenToaNha,diaChi,moTa,anhToaNha,chuSoHuu,tongSoPhong,tienNghiChung,trangThai,ngayTao,ngayCapNhat,createdAt,updatedAt
+toanha_001,Tòa nhà A1,"{""soNha"":""123"",""duong"":""Đường ABC"",""phuong"":""Phường 1"",""quan"":""Quận 1"",""thanhPho"":""TP.HCM""}",Tòa nhà hiện đại tiện nghi đầy đủ,"[]",user_admin_001,10,"[""Thang máy"",""Bảo vệ 24/7"",""Parking""]",hoatDong,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+

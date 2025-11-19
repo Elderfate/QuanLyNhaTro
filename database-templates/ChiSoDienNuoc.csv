@@ -1,0 +1,3 @@
+_id,phong,thang,nam,chiSoDienCu,chiSoDienMoi,soDienTieuThu,chiSoNuocCu,chiSoNuocMoi,soNuocTieuThu,anhChiSoDien,anhChiSoNuoc,nguoiGhi,ngayGhi,ngayTao,createdAt,updatedAt
+chisodiennuoc_001,phong_001,1,2024,0,100,100,0,10,10,,,user_admin_001,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+

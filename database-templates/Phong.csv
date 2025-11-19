@@ -1,0 +1,4 @@
+_id,maPhong,toaNha,tang,dienTich,giaThue,tienCoc,moTa,anhPhong,tienNghi,trangThai,soNguoiToiDa,ngayTao,ngayCapNhat,createdAt,updatedAt
+phong_001,A101,toanha_001,1,25,3500000,7000000,Phòng đầy đủ nội thất view đẹp,"[]","[""Điều hòa"",""Tủ lạnh"",""Giường"",""Tủ quần áo""]",trong,2,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+phong_002,A102,toanha_001,1,30,4000000,8000000,Phòng rộng rãi thoáng mát,"[]","[""Điều hòa"",""Tủ lạnh"",""Giường"",""Bàn làm việc""]",trong,2,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+

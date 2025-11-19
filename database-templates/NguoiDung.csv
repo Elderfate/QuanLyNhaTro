@@ -1,0 +1,3 @@
+_id,ten,email,matKhau,soDienThoai,vaiTro,anhDaiDien,trangThai,ngayTao,ngayCapNhat,createdAt,updatedAt
+user_admin_001,Administrator,admin@example.com,$2b$12$u0XU3ojgvK66x2H83h/mC.ZMXSfHfUry73.dAsqD.K/JAKRQpMocK,0123456789,admin,,hoatDong,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z
+
