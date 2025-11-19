@@ -5,10 +5,18 @@ import type { DatabaseDocument, QueryFilter, AggregationPipeline } from '@/types
 // Adapter để tương thích với MongoDB models
 export class GoogleSheetsModel {
   private collectionName: string;
-  private gsdb = connectGoogleSheets();
+  private _gsdb: ReturnType<typeof connectGoogleSheets> | null = null;
 
   constructor(collectionName: string) {
     this.collectionName = collectionName;
+  }
+
+  // Lazy initialization - chỉ connect khi thực sự cần dùng
+  private get gsdb() {
+    if (!this._gsdb) {
+      this._gsdb = connectGoogleSheets();
+    }
+    return this._gsdb;
   }
 
   // MongoDB compatible methods
