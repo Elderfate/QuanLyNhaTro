@@ -14,7 +14,12 @@ export async function calculatePhongStatus(phongId: string): Promise<'trong' | '
     const hopDongHoatDong = allHopDong.find((hd: any) => {
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      return hd.phong === phongId &&
+      // Normalize phong ID - handle both string and object
+      let phongIdFromHd = hd.phong;
+      if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
+        phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
+      }
+      return String(phongIdFromHd) === String(phongId) &&
              hd.trangThai === 'hoatDong' &&
              ngayBatDau && ngayBatDau <= now &&
              ngayKetThuc && ngayKetThuc >= now;
@@ -27,7 +32,12 @@ export async function calculatePhongStatus(phongId: string): Promise<'trong' | '
     // Kiểm tra có hợp đồng đã đặt nhưng chưa bắt đầu không
     const hopDongDaDat = allHopDong.find((hd: any) => {
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
-      return hd.phong === phongId &&
+      // Normalize phong ID - handle both string and object
+      let phongIdFromHd = hd.phong;
+      if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
+        phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
+      }
+      return String(phongIdFromHd) === String(phongId) &&
              hd.trangThai === 'hoatDong' &&
              ngayBatDau && ngayBatDau > now;
     });

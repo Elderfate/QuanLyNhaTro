@@ -97,7 +97,8 @@ export async function POST(request: NextRequest) {
       trangThai: 'hoatDong', // Set default status
     });
 
-    // Cập nhật trạng thái phòng và khách thuê
+    // Cập nhật trạng thái phòng và khách thuê SAU KHI hợp đồng đã được tạo
+    // Đảm bảo hợp đồng mới đã có trong database trước khi tính toán trạng thái
     await updatePhongStatus(validatedData.phong);
     await updateAllKhachThueStatus(validatedData.khachThueId);
 
