@@ -1,7 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { NguoiDungGS } from '@/lib/googlesheets-models';
+import {
+  successResponse,
+  unauthorizedResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { withRetry } from '@/lib/retry-utils';
 import bcrypt from 'bcryptjs';
 
 export async function GET() {
@@ -9,64 +16,33 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.email || session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return unauthorizedResponse('Chỉ quản trị viên mới có quyền truy cập');
     }
 
-    const users = await NguoiDungGS.find();
-    
-    // Log all users for debugging
-    console.log(`[Users API] Total users found: ${users.length}`);
-    users.forEach((user: any, index: number) => {
-      console.log(`[Users API] User ${index + 1}:`, {
-        _id: user._id,
-        email: user.email,
-        vaiTro: user.vaiTro,
-        role: user.role,
-        ten: user.ten,
-        name: user.name
-      });
-    });
+    const users = await withRetry(() => NguoiDungGS.find());
     
     // Filter out tenants (khachThue) - only return admins, landlords (chuNha), and staff (nhanVien)
-    const filteredUsers = users.filter((user: any) => {
-      const vaiTro = (user.vaiTro || user.role || '').toLowerCase();
-      const isTenant = vaiTro === 'khachthue' || vaiTro === 'khachthue' || vaiTro === 'tenant';
+    const filteredUsers = users.filter((user) => {
+      const vaiTro = ((user as { vaiTro?: string; role?: string }).vaiTro || (user as { role?: string }).role || '').toLowerCase();
+      const isTenant = vaiTro === 'khachthue' || vaiTro === 'tenant';
       return !isTenant;
     });
     
     // Remove password fields and sort by createdAt
     const usersWithoutPassword = filteredUsers
-      .map((user: any) => {
-        const { password, matKhau, ...userWithoutPassword } = user;
+      .map((user) => {
+        const { password, matKhau, ...userWithoutPassword } = user as { password?: string; matKhau?: string; [key: string]: unknown };
         return userWithoutPassword;
       })
-      .sort((a: any, b: any) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      .sort((a, b) => {
+        const dateA = (a as { createdAt?: string }).createdAt ? new Date((a as { createdAt: string }).createdAt).getTime() : 0;
+        const dateB = (b as { createdAt?: string }).createdAt ? new Date((b as { createdAt: string }).createdAt).getTime() : 0;
         return dateB - dateA;
       });
     
-    // Log for debugging
-    console.log(`[Users API] Filtered users (excluding tenants): ${filteredUsers.length}`);
-    console.log(`[Users API] Returning ${usersWithoutPassword.length} users (after password removal)`);
-    console.log(`[Users API] Admin users:`, usersWithoutPassword.filter((u: any) => 
-      (u.role || u.vaiTro || '').toLowerCase() === 'admin'
-    ).length);
-    console.log(`[Users API] Sample user:`, usersWithoutPassword[0] ? {
-      _id: usersWithoutPassword[0]._id,
-      email: usersWithoutPassword[0].email,
-      role: usersWithoutPassword[0].role,
-      vaiTro: usersWithoutPassword[0].vaiTro,
-    } : 'No users');
-    
-    // Return in the format expected by apiClient (wrapped in data property)
-    return NextResponse.json({
-      success: true,
-      data: usersWithoutPassword
-    }, { status: 200 });
+    return successResponse(usersWithoutPassword);
   } catch (error) {
-    console.error('Error fetching users:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return serverErrorResponse(error, 'Lỗi khi lấy danh sách người dùng');
   }
 }
 
@@ -75,7 +51,7 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.email || session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return unauthorizedResponse('Chỉ quản trị viên mới có quyền tạo người dùng');
     }
 
     const body = await request.json();
@@ -83,17 +59,18 @@ export async function POST(request: NextRequest) {
 
     // Validation
     if (!name || !email || !password || !role) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      return badRequestResponse('Thiếu thông tin bắt buộc');
     }
 
     // Check if user already exists
-    const allUsers = await NguoiDungGS.find();
-    const existingUser = allUsers.find((user: any) => 
-      user.email?.toLowerCase() === email.toLowerCase()
-    );
+    const allUsers = await withRetry(() => NguoiDungGS.find());
+    const existingUser = allUsers.find((user) => {
+      const userEmail = (user as { email?: string }).email;
+      return userEmail?.toLowerCase() === email.toLowerCase();
+    });
     
     if (existingUser) {
-      return NextResponse.json({ error: 'Email đã được sử dụng' }, { status: 400 });
+      return badRequestResponse('Email đã được sử dụng');
     }
 
     // Hash password
@@ -101,7 +78,7 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create user
-    const newUser = await NguoiDungGS.create({
+    const newUser = await withRetry(() => NguoiDungGS.create({
       _id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       // Vietnamese fields
       ten: name,
@@ -120,13 +97,12 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
       ngayTao: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
-    });
+    }));
 
     // Return user without password
-    const { password: _, matKhau: __, ...userWithoutPassword } = newUser;
-    return NextResponse.json(userWithoutPassword, { status: 201 });
+    const { password: _, matKhau: __, ...userWithoutPassword } = newUser as { password?: string; matKhau?: string; [key: string]: unknown };
+    return successResponse(userWithoutPassword, 'Người dùng đã được tạo thành công', 201);
   } catch (error) {
-    console.error('Error creating user:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return serverErrorResponse(error, 'Lỗi khi tạo người dùng');
   }
 }

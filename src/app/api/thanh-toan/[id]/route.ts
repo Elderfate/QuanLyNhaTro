@@ -1,7 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { ThanhToanGS, HoaDonGS, NguoiDungGS } from '@/lib/googlesheets-models';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { normalizeId, compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
+import type { HoaDonDocument } from '@/lib/api-types';
 
 // PUT - Cập nhật thanh toán
 export async function PUT(
@@ -11,7 +21,7 @@ export async function PUT(
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+      return unauthorizedResponse();
     }
 
     const { id } = params;
@@ -28,71 +38,66 @@ export async function PUT(
 
     // Validate required fields
     if (!hoaDonId || !soTien || !phuongThuc) {
-      return NextResponse.json(
-        { message: 'Thiếu thông tin bắt buộc' },
-        { status: 400 }
-      );
+      return badRequestResponse('Thiếu thông tin bắt buộc');
     }
 
     // Tìm thanh toán hiện tại
-    const thanhToanHienTai = await ThanhToanGS.findById(id);
+    const thanhToanHienTai = await withRetry(() => ThanhToanGS.findById(id));
     if (!thanhToanHienTai) {
-      return NextResponse.json(
-        { message: 'Thanh toán không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Thanh toán không tồn tại');
     }
 
     // Kiểm tra hóa đơn tồn tại
-    const hoaDon = await HoaDonGS.findById(hoaDonId);
+    const normalizedHoaDonId = normalizeId(hoaDonId);
+    if (!normalizedHoaDonId) {
+      return badRequestResponse('ID hóa đơn không hợp lệ');
+    }
+    
+    const hoaDon = await withRetry(() => HoaDonGS.findById(normalizedHoaDonId)) as HoaDonDocument | null;
     if (!hoaDon) {
-      return NextResponse.json(
-        { message: 'Hóa đơn không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Hóa đơn không tồn tại');
     }
 
     // Tính toán lại số tiền còn lại của hóa đơn
     // Trước tiên, hoàn lại số tiền cũ
-    const hoaDonCu = await HoaDonGS.findById(thanhToanHienTai.hoaDon);
-    if (hoaDonCu) {
-      const daThanhToanCu = (hoaDonCu.daThanhToan || 0) - (thanhToanHienTai.soTien || 0);
-      const conLaiCu = (hoaDonCu.tongTien || 0) - daThanhToanCu;
-      
-      let trangThaiCu = 'chuaThanhToan';
-      if (conLaiCu <= 0) {
-        trangThaiCu = 'daThanhToan';
-      } else if (daThanhToanCu > 0) {
-        trangThaiCu = 'daThanhToanMotPhan';
+    const oldHoaDonId = normalizeId(thanhToanHienTai.hoaDon);
+    if (oldHoaDonId && !compareIds(oldHoaDonId, normalizedHoaDonId)) {
+      const hoaDonCu = await withRetry(() => HoaDonGS.findById(oldHoaDonId)) as HoaDonDocument | null;
+      if (hoaDonCu) {
+        const daThanhToanCu = (hoaDonCu.daThanhToan || 0) - (thanhToanHienTai.soTien || 0);
+        const tongTienCu = hoaDonCu.tongTien || 0;
+        const conLaiCu = tongTienCu - daThanhToanCu;
+        
+        let trangThaiCu: HoaDon['trangThai'] = 'chuaThanhToan';
+        if (conLaiCu <= 0) {
+          trangThaiCu = 'daThanhToan';
+        } else if (daThanhToanCu > 0) {
+          trangThaiCu = 'daThanhToanMotPhan';
+        }
+        
+        await withRetry(() => HoaDonGS.findByIdAndUpdate(oldHoaDonId, {
+          daThanhToan: daThanhToanCu,
+          conLai: conLaiCu,
+          trangThai: trangThaiCu,
+          updatedAt: new Date().toISOString(),
+        }));
       }
-      
-      await HoaDonGS.findByIdAndUpdate(hoaDonCu._id, {
-        daThanhToan: daThanhToanCu,
-        conLai: conLaiCu,
-        trangThai: trangThaiCu,
-        updatedAt: new Date().toISOString(),
-      });
     }
 
     // Kiểm tra số tiền thanh toán mới không vượt quá số tiền còn lại
-    if (soTien > (hoaDon.conLai || 0)) {
-      return NextResponse.json(
-        { message: 'Số tiền thanh toán không được vượt quá số tiền còn lại' },
-        { status: 400 }
-      );
+    const conLai = hoaDon.conLai || 0;
+    if (soTien > conLai) {
+      return badRequestResponse('Số tiền thanh toán không được vượt quá số tiền còn lại');
     }
 
     // Validate thông tin chuyển khoản nếu phương thức là chuyển khoản
     if (phuongThuc === 'chuyenKhoan' && !thongTinChuyenKhoan) {
-      return NextResponse.json(
-        { message: 'Thông tin chuyển khoản là bắt buộc' },
-        { status: 400 }
-      );
+      return badRequestResponse('Thông tin chuyển khoản là bắt buộc');
     }
 
     // Cập nhật thanh toán
-    const updatedThanhToan = await ThanhToanGS.findByIdAndUpdate(id, {
-      hoaDon: hoaDonId,
+    const updatedThanhToan = await withRetry(() => ThanhToanGS.findByIdAndUpdate(id, {
+      hoaDon: normalizedHoaDonId,
       soTien,
       phuongThuc,
       thongTinChuyenKhoan: phuongThuc === 'chuyenKhoan' ? thongTinChuyenKhoan : undefined,
@@ -100,57 +105,57 @@ export async function PUT(
       ghiChu: ghiChu || '',
       anhBienLai: anhBienLai || '',
       updatedAt: new Date().toISOString(),
-    });
+    }));
+
+    if (!updatedThanhToan) {
+      return notFoundResponse('Thanh toán không tồn tại');
+    }
 
     // Cập nhật hóa đơn mới
+    const tongTien = hoaDon.tongTien || 0;
     const daThanhToanMoi = (hoaDon.daThanhToan || 0) + soTien;
-    const conLaiMoi = (hoaDon.tongTien || 0) - daThanhToanMoi;
+    const conLaiMoi = tongTien - daThanhToanMoi;
     
-    let trangThaiMoi = 'chuaThanhToan';
+    let trangThaiMoi: HoaDon['trangThai'] = 'chuaThanhToan';
     if (conLaiMoi <= 0) {
       trangThaiMoi = 'daThanhToan';
     } else if (daThanhToanMoi > 0) {
       trangThaiMoi = 'daThanhToanMotPhan';
     }
 
-    await HoaDonGS.findByIdAndUpdate(hoaDonId, {
+    await withRetry(() => HoaDonGS.findByIdAndUpdate(normalizedHoaDonId, {
       daThanhToan: daThanhToanMoi,
       conLai: conLaiMoi,
       trangThai: trangThaiMoi,
       updatedAt: new Date().toISOString(),
-    });
+    }));
 
     // Populate để trả về dữ liệu đầy đủ
-    if (updatedThanhToan && updatedThanhToan.hoaDon) {
-      const hoaDonPop = await HoaDonGS.findById(updatedThanhToan.hoaDon);
+    const updatedHoaDonId = normalizeId(updatedThanhToan.hoaDon);
+    if (updatedHoaDonId) {
+      const hoaDonPop = await withRetry(() => HoaDonGS.findById(updatedHoaDonId)) as HoaDonDocument | null;
       updatedThanhToan.hoaDon = hoaDonPop ? {
         _id: hoaDonPop._id,
-        maHoaDon: hoaDonPop.maHoaDon || hoaDonPop.soHoaDon,
+        maHoaDon: hoaDonPop.maHoaDon || (hoaDonPop as { soHoaDon?: string }).soHoaDon || '',
         thang: hoaDonPop.thang,
         nam: hoaDonPop.nam,
         tongTien: hoaDonPop.tongTien
       } : null;
     }
-    if (updatedThanhToan && updatedThanhToan.nguoiNhan) {
-      const nguoiNhan = await NguoiDungGS.findById(updatedThanhToan.nguoiNhan);
+    
+    const nguoiNhanId = normalizeId(updatedThanhToan.nguoiNhan);
+    if (nguoiNhanId) {
+      const nguoiNhan = await withRetry(() => NguoiDungGS.findById(nguoiNhanId));
       updatedThanhToan.nguoiNhan = nguoiNhan ? {
         _id: nguoiNhan._id,
-        hoTen: nguoiNhan.ten,
-        email: nguoiNhan.email
+        hoTen: (nguoiNhan as { ten?: string }).ten || '',
+        email: (nguoiNhan as { email?: string }).email || ''
       } : null;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: updatedThanhToan,
-      message: 'Cập nhật thanh toán thành công'
-    });
+    return successResponse(updatedThanhToan, 'Cập nhật thanh toán thành công');
   } catch (error) {
-    console.error('Error updating thanh toan:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật thanh toán');
   }
 }
 
@@ -162,53 +167,47 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+      return unauthorizedResponse();
     }
 
     const { id } = params;
 
     // Tìm thanh toán
-    const thanhToan = await ThanhToanGS.findById(id);
+    const thanhToan = await withRetry(() => ThanhToanGS.findById(id));
     if (!thanhToan) {
-      return NextResponse.json(
-        { message: 'Thanh toán không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Thanh toán không tồn tại');
     }
 
     // Cập nhật lại hóa đơn (hoàn lại số tiền)
-    const hoaDon = await HoaDonGS.findById(thanhToan.hoaDon);
-    if (hoaDon) {
-      const daThanhToanMoi = (hoaDon.daThanhToan || 0) - (thanhToan.soTien || 0);
-      const conLaiMoi = (hoaDon.tongTien || 0) - daThanhToanMoi;
-      
-      let trangThaiMoi = 'chuaThanhToan';
-      if (conLaiMoi <= 0) {
-        trangThaiMoi = 'daThanhToan';
-      } else if (daThanhToanMoi > 0) {
-        trangThaiMoi = 'daThanhToanMotPhan';
+    const hoaDonId = normalizeId(thanhToan.hoaDon);
+    if (hoaDonId) {
+      const hoaDon = await withRetry(() => HoaDonGS.findById(hoaDonId)) as HoaDonDocument | null;
+      if (hoaDon) {
+        const tongTien = hoaDon.tongTien || 0;
+        const daThanhToanMoi = (hoaDon.daThanhToan || 0) - (thanhToan.soTien || 0);
+        const conLaiMoi = tongTien - daThanhToanMoi;
+        
+        let trangThaiMoi: HoaDon['trangThai'] = 'chuaThanhToan';
+        if (conLaiMoi <= 0) {
+          trangThaiMoi = 'daThanhToan';
+        } else if (daThanhToanMoi > 0) {
+          trangThaiMoi = 'daThanhToanMotPhan';
+        }
+        
+        await withRetry(() => HoaDonGS.findByIdAndUpdate(hoaDonId, {
+          daThanhToan: daThanhToanMoi,
+          conLai: conLaiMoi,
+          trangThai: trangThaiMoi,
+          updatedAt: new Date().toISOString(),
+        }));
       }
-      
-      await HoaDonGS.findByIdAndUpdate(hoaDon._id, {
-        daThanhToan: daThanhToanMoi,
-        conLai: conLaiMoi,
-        trangThai: trangThaiMoi,
-        updatedAt: new Date().toISOString(),
-      });
     }
 
     // Xóa thanh toán
-    await ThanhToanGS.findByIdAndDelete(id);
+    await withRetry(() => ThanhToanGS.findByIdAndDelete(id));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Xóa thanh toán thành công'
-    });
+    return successResponse(null, 'Xóa thanh toán thành công');
   } catch (error) {
-    console.error('Error deleting thanh toan:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa thanh toán');
   }
 }

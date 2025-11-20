@@ -1,7 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { SuCoGS, PhongGS, KhachThueGS, NguoiDungGS } from '@/lib/googlesheets-models';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+} from '@/lib/api-response';
+import { normalizeId } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
 import { z } from 'zod';
 
 const updateSuCoSchema = z.object({
@@ -23,23 +32,18 @@ export async function GET(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
-    const suCo = await SuCoGS.findById(params.id);
+    const suCo = await withRetry(() => SuCoGS.findById(params.id));
     if (!suCo) {
-      return NextResponse.json(
-        { message: 'Sự cố không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Sự cố không tồn tại');
     }
 
     // Populate relationships
-    if (suCo.phong) {
-      const phong = await PhongGS.findById(suCo.phong);
+    const phongId = normalizeId(suCo.phong);
+    if (phongId) {
+      const phong = await withRetry(() => PhongGS.findById(phongId));
       suCo.phong = phong ? {
         _id: phong._id,
         maPhong: phong.maPhong,
@@ -47,35 +51,30 @@ export async function GET(
       } : null;
     }
     
-    if (suCo.khachThue) {
-      const khachThue = await KhachThueGS.findById(suCo.khachThue);
+    const khachThueId = normalizeId(suCo.khachThue);
+    if (khachThueId) {
+      const khachThue = await withRetry(() => KhachThueGS.findById(khachThueId));
       suCo.khachThue = khachThue ? {
         _id: khachThue._id,
-        hoTen: khachThue.ten || khachThue.hoTen,
-        soDienThoai: khachThue.soDienThoai
+        hoTen: (khachThue as { ten?: string; hoTen?: string }).ten || (khachThue as { hoTen?: string }).hoTen || '',
+        soDienThoai: (khachThue as { soDienThoai: string }).soDienThoai
       } : null;
     }
     
-    if (suCo.nguoiXuLy) {
-      const nguoiXuLy = await NguoiDungGS.findById(suCo.nguoiXuLy);
+    const nguoiXuLyId = normalizeId(suCo.nguoiXuLy);
+    if (nguoiXuLyId) {
+      const nguoiXuLy = await withRetry(() => NguoiDungGS.findById(nguoiXuLyId));
       suCo.nguoiXuLy = nguoiXuLy ? {
         _id: nguoiXuLy._id,
-        ten: nguoiXuLy.ten,
-        email: nguoiXuLy.email
+        ten: (nguoiXuLy as { ten?: string }).ten || '',
+        email: (nguoiXuLy as { email?: string }).email || ''
       } : null;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: suCo,
-    });
+    return successResponse(suCo);
 
   } catch (error) {
-    console.error('Error fetching su co:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi lấy thông tin sự cố');
   }
 }
 
@@ -87,16 +86,21 @@ export async function PUT(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = updateSuCoSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = updateSuCoSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
-    const updateData = {
+    const updateData: Record<string, unknown> = {
       ...validatedData,
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
@@ -107,18 +111,16 @@ export async function PUT(
       updateData.hinhAnh = validatedData.anhSuCo;
     }
 
-    const suCo = await SuCoGS.findByIdAndUpdate(params.id, updateData);
+    const suCo = await withRetry(() => SuCoGS.findByIdAndUpdate(params.id, updateData));
 
     if (!suCo) {
-      return NextResponse.json(
-        { message: 'Sự cố không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Sự cố không tồn tại');
     }
 
     // Populate relationships
-    if (suCo.phong) {
-      const phong = await PhongGS.findById(suCo.phong);
+    const phongId = normalizeId(suCo.phong);
+    if (phongId) {
+      const phong = await withRetry(() => PhongGS.findById(phongId));
       suCo.phong = phong ? {
         _id: phong._id,
         maPhong: phong.maPhong,
@@ -126,43 +128,30 @@ export async function PUT(
       } : null;
     }
     
-    if (suCo.khachThue) {
-      const khachThue = await KhachThueGS.findById(suCo.khachThue);
+    const khachThueId = normalizeId(suCo.khachThue);
+    if (khachThueId) {
+      const khachThue = await withRetry(() => KhachThueGS.findById(khachThueId));
       suCo.khachThue = khachThue ? {
         _id: khachThue._id,
-        hoTen: khachThue.ten || khachThue.hoTen,
-        soDienThoai: khachThue.soDienThoai
+        hoTen: (khachThue as { ten?: string; hoTen?: string }).ten || (khachThue as { hoTen?: string }).hoTen || '',
+        soDienThoai: (khachThue as { soDienThoai: string }).soDienThoai
       } : null;
     }
     
-    if (suCo.nguoiXuLy) {
-      const nguoiXuLy = await NguoiDungGS.findById(suCo.nguoiXuLy);
+    const nguoiXuLyId = normalizeId(suCo.nguoiXuLy);
+    if (nguoiXuLyId) {
+      const nguoiXuLy = await withRetry(() => NguoiDungGS.findById(nguoiXuLyId));
       suCo.nguoiXuLy = nguoiXuLy ? {
         _id: nguoiXuLy._id,
-        ten: nguoiXuLy.ten,
-        email: nguoiXuLy.email
+        ten: (nguoiXuLy as { ten?: string }).ten || '',
+        email: (nguoiXuLy as { email?: string }).email || ''
       } : null;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: suCo,
-      message: 'Sự cố đã được cập nhật thành công',
-    });
+    return successResponse(suCo, 'Sự cố đã được cập nhật thành công');
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.errors[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating su co:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật sự cố');
   }
 }
 
@@ -174,32 +163,19 @@ export async function DELETE(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
-    const suCo = await SuCoGS.findById(params.id);
+    const suCo = await withRetry(() => SuCoGS.findById(params.id));
     if (!suCo) {
-      return NextResponse.json(
-        { message: 'Sự cố không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Sự cố không tồn tại');
     }
 
-    await SuCoGS.findByIdAndDelete(params.id);
+    await withRetry(() => SuCoGS.findByIdAndDelete(params.id));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Sự cố đã được xóa thành công',
-    });
+    return successResponse(null, 'Sự cố đã được xóa thành công');
 
   } catch (error) {
-    console.error('Error deleting su co:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa sự cố');
   }
 }
