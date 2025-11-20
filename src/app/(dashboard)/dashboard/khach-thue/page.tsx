@@ -526,8 +526,8 @@ function KhachThueForm({
     
     try {
       // Step 1: Upload CCCD images if they are File objects
-      let matTruocUrl = formData.anhCCCD.matTruoc;
-      let matSauUrl = formData.anhCCCD.matSau;
+      let matTruocUrl: string = typeof formData.anhCCCD.matTruoc === 'string' ? formData.anhCCCD.matTruoc : '';
+      let matSauUrl: string = typeof formData.anhCCCD.matSau === 'string' ? formData.anhCCCD.matSau : '';
 
       // Upload matTruoc if it's a File
       if (formData.anhCCCD.matTruoc instanceof File) {
@@ -546,10 +546,16 @@ function KhachThueForm({
           throw new Error(result.message || 'Lỗi upload ảnh CCCD mặt trước');
         }
 
-        matTruocUrl = result.data?.secure_url || result.data?.url;
-        if (!matTruocUrl) {
-          throw new Error('Không nhận được URL ảnh CCCD mặt trước');
+        // Extract URL from response - handle different response formats
+        const uploadedUrl = result.data?.secure_url || result.data?.url || result.secure_url || result.url;
+        if (!uploadedUrl || typeof uploadedUrl !== 'string') {
+          console.error('Upload response:', result);
+          throw new Error('Không nhận được URL ảnh CCCD mặt trước từ server');
         }
+        
+        matTruocUrl = uploadedUrl;
+        console.log('✅ Uploaded matTruoc URL:', matTruocUrl);
+        toast.success('Upload ảnh CCCD mặt trước thành công!');
       }
 
       // Upload matSau if it's a File
@@ -569,10 +575,16 @@ function KhachThueForm({
           throw new Error(result.message || 'Lỗi upload ảnh CCCD mặt sau');
         }
 
-        matSauUrl = result.data?.secure_url || result.data?.url;
-        if (!matSauUrl) {
-          throw new Error('Không nhận được URL ảnh CCCD mặt sau');
+        // Extract URL from response - handle different response formats
+        const uploadedUrl = result.data?.secure_url || result.data?.url || result.secure_url || result.url;
+        if (!uploadedUrl || typeof uploadedUrl !== 'string') {
+          console.error('Upload response:', result);
+          throw new Error('Không nhận được URL ảnh CCCD mặt sau từ server');
         }
+        
+        matSauUrl = uploadedUrl;
+        console.log('✅ Uploaded matSau URL:', matSauUrl);
+        toast.success('Upload ảnh CCCD mặt sau thành công!');
       }
 
       // Step 2: Xóa ảnh CCCD đã bị xóa trên Cloudinary
@@ -627,12 +639,21 @@ function KhachThueForm({
       const url = khachThue ? `/api/khach-thue/${khachThue._id}` : '/api/khach-thue';
       const method = khachThue ? 'PUT' : 'POST';
 
+      // Ensure URLs are strings
+      const finalMatTruocUrl = typeof matTruocUrl === 'string' ? matTruocUrl : '';
+      const finalMatSauUrl = typeof matSauUrl === 'string' ? matSauUrl : '';
+
+      console.log('📤 Submitting with CCCD URLs:', {
+        matTruoc: finalMatTruocUrl,
+        matSau: finalMatSauUrl
+      });
+
       // Chỉ gửi matKhau khi nó được nhập
       const submitData = { 
         ...formData,
         anhCCCD: {
-          matTruoc: (typeof matTruocUrl === 'string' ? matTruocUrl : '') || '',
-          matSau: (typeof matSauUrl === 'string' ? matSauUrl : '') || ''
+          matTruoc: finalMatTruocUrl,
+          matSau: finalMatSauUrl
         }
       };
       if (!submitData.matKhau || submitData.matKhau.trim() === '') {
@@ -649,13 +670,22 @@ function KhachThueForm({
 
       if (response.ok) {
         const result = await response.json();
+        console.log('📥 API Response:', result);
+        
         if (result.success) {
+          // Verify response includes anhCCCD
+          if (result.data && result.data.anhCCCD) {
+            console.log('✅ Response includes anhCCCD:', result.data.anhCCCD);
+          } else {
+            console.warn('⚠️ Response missing anhCCCD:', result.data);
+          }
           onSuccess(result.data);
         } else {
           toast.error(result.message || 'Có lỗi xảy ra');
         }
       } else {
         const error = await response.json();
+        console.error('❌ API Error:', error);
         toast.error(error.message || 'Có lỗi xảy ra');
       }
     } catch (error) {

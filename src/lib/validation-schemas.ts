@@ -161,8 +161,14 @@ export const khachThueSchema = z.object({
     .transform(val => val.trim()),
     
   anhCCCD: z.object({
-    matTruoc: z.string().url('URL ảnh mặt trước CCCD không hợp lệ').optional(),
-    matSau: z.string().url('URL ảnh mặt sau CCCD không hợp lệ').optional(),
+    matTruoc: z.string().optional().refine(
+      (val) => !val || val === '' || z.string().url().safeParse(val).success,
+      { message: 'URL ảnh mặt trước CCCD không hợp lệ' }
+    ),
+    matSau: z.string().optional().refine(
+      (val) => !val || val === '' || z.string().url().safeParse(val).success,
+      { message: 'URL ảnh mặt sau CCCD không hợp lệ' }
+    ),
   }).optional(),
   
   ngheNghiep: z.string()

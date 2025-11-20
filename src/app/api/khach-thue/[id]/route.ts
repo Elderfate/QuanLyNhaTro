@@ -121,12 +121,19 @@ export async function PUT(
     // Handle image deletion from Cloudinary if CCCD images were removed
     const oldAnhCCCD = existingKhachThue.anhCCCD || { matTruoc: '', matSau: '' };
     const newAnhCCCD = validatedData.anhCCCD || { matTruoc: '', matSau: '' };
+    
+    // Normalize URLs - ensure they're strings and not empty
+    const normalizedNewAnhCCCD = {
+      matTruoc: (newAnhCCCD.matTruoc && typeof newAnhCCCD.matTruoc === 'string' && newAnhCCCD.matTruoc.trim()) ? newAnhCCCD.matTruoc.trim() : '',
+      matSau: (newAnhCCCD.matSau && typeof newAnhCCCD.matSau === 'string' && newAnhCCCD.matSau.trim()) ? newAnhCCCD.matSau.trim() : ''
+    };
+    
     const deletedImageUrls: string[] = [];
     
-    if (oldAnhCCCD.matTruoc && oldAnhCCCD.matTruoc !== newAnhCCCD.matTruoc) {
+    if (oldAnhCCCD.matTruoc && oldAnhCCCD.matTruoc !== normalizedNewAnhCCCD.matTruoc && normalizedNewAnhCCCD.matTruoc === '') {
       deletedImageUrls.push(oldAnhCCCD.matTruoc);
     }
-    if (oldAnhCCCD.matSau && oldAnhCCCD.matSau !== newAnhCCCD.matSau) {
+    if (oldAnhCCCD.matSau && oldAnhCCCD.matSau !== normalizedNewAnhCCCD.matSau && normalizedNewAnhCCCD.matSau === '') {
       deletedImageUrls.push(oldAnhCCCD.matSau);
     }
     
@@ -146,12 +153,14 @@ export async function PUT(
       ten: validatedData.hoTen,
       hoTen: validatedData.hoTen,
       ngaySinh: validatedData.ngaySinh,
-      anhCCCD: newAnhCCCD,
+      anhCCCD: normalizedNewAnhCCCD, // Use normalized URLs
       soCCCD: validatedData.cccd,
       cccd: validatedData.cccd,
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
     };
+    
+    console.log('📝 Updating khach thue with anhCCCD:', normalizedNewAnhCCCD);
 
     // Nếu có mật khẩu mới, hash password
     if (validatedData.matKhau) {
