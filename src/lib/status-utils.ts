@@ -103,13 +103,19 @@ export async function calculateKhachThueStatus(khachThueId: string): Promise<'da
 export async function updatePhongStatus(phongId: string): Promise<void> {
   try {
     const newStatus = await calculatePhongStatus(phongId);
-    await PhongGS.findByIdAndUpdate(phongId, { 
+    console.log(`📊 Updating phong ${phongId} status to: ${newStatus}`);
+    const result = await PhongGS.findByIdAndUpdate(phongId, { 
       trangThai: newStatus,
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
     });
+    if (result) {
+      console.log(`✅ Successfully updated phong ${phongId} status to: ${newStatus}`);
+    } else {
+      console.warn(`⚠️ Failed to update phong ${phongId} - not found`);
+    }
   } catch (error) {
-    console.error('Error updating phong status:', error);
+    console.error(`❌ Error updating phong ${phongId} status:`, error);
   }
 }
 
