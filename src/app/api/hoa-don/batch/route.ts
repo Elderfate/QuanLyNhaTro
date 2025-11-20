@@ -144,12 +144,11 @@ export async function POST(request: NextRequest) {
         // Get tienPhong from phong.giaThue instead of hopDong.giaThue
         const phong = allPhong.find((p: any) => String(p._id) === String(phongId));
         const tienPhong = phong?.giaThue || hopDong.giaThue || 0;
+        const maPhong = phong?.maPhong || 'XXX';
         
         const tongTien = tienPhong + tienDien + tienNuoc + tongTienDichVu;
 
         // Generate invoice number
-        const phong = allPhong.find((p: any) => String(p._id) === String(phongId));
-        const maPhong = phong?.maPhong || 'XXX';
         const invoiceNumber = `HD${nam}${String(thang).padStart(2, '0')}${maPhong}${Date.now().toString().slice(-4)}`;
 
         // Calculate due date
