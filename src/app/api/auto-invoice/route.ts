@@ -81,14 +81,20 @@ export async function POST(request: NextRequest) {
           
           if (currentMonth === thangBatDau && currentYear === namBatDau) {
             // Tháng đầu tiên: tính từ chỉ số ban đầu đến chỉ số hiện tại
-            soDienTieuThu = Math.max(0, (chiSo.chiSoDienMoi || chiSo.chiSoDienCuoiKy || 0) - (contract.chiSoDienBanDau || 0));
-            soNuocTieuThu = Math.max(0, (chiSo.chiSoNuocMoi || chiSo.chiSoNuocCuoiKy || 0) - (contract.chiSoNuocBanDau || 0));
+            const chiSoDienMoi = typeof chiSo.chiSoDienMoi === 'number' ? chiSo.chiSoDienMoi : (typeof chiSo.chiSoDienCuoiKy === 'number' ? chiSo.chiSoDienCuoiKy : 0);
+            const chiSoNuocMoi = typeof chiSo.chiSoNuocMoi === 'number' ? chiSo.chiSoNuocMoi : (typeof chiSo.chiSoNuocCuoiKy === 'number' ? chiSo.chiSoNuocCuoiKy : 0);
+            const chiSoDienBanDau = typeof contract.chiSoDienBanDau === 'number' ? contract.chiSoDienBanDau : 0;
+            const chiSoNuocBanDau = typeof contract.chiSoNuocBanDau === 'number' ? contract.chiSoNuocBanDau : 0;
+            soDienTieuThu = Math.max(0, chiSoDienMoi - chiSoDienBanDau);
+            soNuocTieuThu = Math.max(0, chiSoNuocMoi - chiSoNuocBanDau);
           }
         }
 
         // Calculate costs
-        const tienDien = soDienTieuThu * (contract.giaDien || 0);
-        const tienNuoc = soNuocTieuThu * (contract.giaNuoc || 0);
+        const giaDien = typeof contract.giaDien === 'number' ? contract.giaDien : 0;
+        const giaNuoc = typeof contract.giaNuoc === 'number' ? contract.giaNuoc : 0;
+        const tienDien = soDienTieuThu * giaDien;
+        const tienNuoc = soNuocTieuThu * giaNuoc;
         const phiDichVu = Array.isArray(contract.phiDichVu) ? contract.phiDichVu : [];
         const tongTienDichVu = phiDichVu.reduce((sum: number, dv: any) => sum + (dv.gia || 0), 0);
         const tongTien = (contract.giaThue || 0) + tienDien + tienNuoc + tongTienDichVu;

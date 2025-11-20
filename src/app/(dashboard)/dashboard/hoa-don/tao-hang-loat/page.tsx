@@ -182,11 +182,6 @@ export default function TaoHangLoatHoaDonPage() {
       </div>
     );
   }
-  
-  // Ensure arrays are valid
-  const safeHopDong = Array.isArray(allHopDong) ? allHopDong : [];
-  const safePhong = Array.isArray(allPhong) ? allPhong : [];
-  const safeHoaDon = Array.isArray(allHoaDon) ? allHoaDon : [];
 
   const selectedCount = selectedPhongIds.size;
   const availableCount = availableRooms.filter(r => !r.hasInvoice).length;

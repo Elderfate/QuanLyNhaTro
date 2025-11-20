@@ -70,13 +70,12 @@ export async function POST(request: NextRequest) {
 
     // If single file upload, return single object for backward compatibility
     if (hasFile && uploadResults.length === 1) {
+      const result = uploadResults[0];
       return NextResponse.json({
         success: true,
         data: {
-          url: uploadResults[0].secure_url,
-          secure_url: uploadResults[0].secure_url,
-          public_id: uploadResults[0].public_id,
-          ...uploadResults[0]
+          ...result,
+          url: result.secure_url,
         },
         message: 'Đã tải lên ảnh thành công'
       });

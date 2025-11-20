@@ -86,8 +86,8 @@ export async function GET(
       const khachThueList = await Promise.all(
         khachThueIds.map((ktId) => withRetry(() => KhachThueGS.findById(ktId)))
       );
-      hopDong.khachThueId = khachThueList
-        .filter(kt => kt)
+      (hopDong as { khachThueId?: unknown }).khachThueId = khachThueList
+        .filter((kt): kt is NonNullable<typeof kt> => kt !== null && kt !== undefined)
         .map((kt) => ({
           _id: kt._id,
           hoTen: (kt as { ten?: string; hoTen?: string }).ten || (kt as { hoTen?: string }).hoTen || '',
@@ -201,11 +201,13 @@ export async function PUT(
     const phongId = normalizeId(hopDong.phong);
     if (phongId) {
       const phong = await withRetry(() => PhongGS.findById(phongId));
-      hopDong.phong = phong ? {
-        _id: phong._id,
-        maPhong: phong.maPhong,
-        toaNha: phong.toaNha
-      } : null;
+      if (phong) {
+        (hopDong as { phong?: unknown }).phong = {
+          _id: phong._id,
+          maPhong: phong.maPhong,
+          toaNha: phong.toaNha
+        };
+      }
     }
 
     if (hopDong.khachThueId) {
@@ -213,8 +215,8 @@ export async function PUT(
       const khachThueList = await Promise.all(
         khachThueIds.map((ktId) => withRetry(() => KhachThueGS.findById(ktId)))
       );
-      hopDong.khachThueId = khachThueList
-        .filter(kt => kt)
+      (hopDong as { khachThueId?: unknown }).khachThueId = khachThueList
+        .filter((kt): kt is NonNullable<typeof kt> => kt !== null && kt !== undefined)
         .map((kt) => ({
           _id: kt._id,
           hoTen: (kt as { ten?: string; hoTen?: string }).ten || (kt as { hoTen?: string }).hoTen || '',
@@ -225,8 +227,9 @@ export async function PUT(
     const nguoiDaiDienId = normalizeId(hopDong.nguoiDaiDien);
     if (nguoiDaiDienId) {
       const nguoiDaiDien = await withRetry(() => KhachThueGS.findById(nguoiDaiDienId));
-      hopDong.nguoiDaiDien = nguoiDaiDien ? {
-        _id: nguoiDaiDien._id,
+      if (nguoiDaiDien) {
+        (hopDong as { nguoiDaiDien?: unknown }).nguoiDaiDien = {
+          _id: nguoiDaiDien._id,
         hoTen: (nguoiDaiDien as { ten?: string; hoTen?: string }).ten || (nguoiDaiDien as { hoTen?: string }).hoTen || '',
         soDienThoai: (nguoiDaiDien as { soDienThoai: string }).soDienThoai
       } : null;

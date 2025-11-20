@@ -12,7 +12,7 @@ import {
   serverErrorResponse,
   forbiddenResponse,
 } from '@/lib/api-response';
-import { compareIds } from '@/lib/id-utils';
+import { compareIds, normalizeId } from '@/lib/id-utils';
 import { withRetry } from '@/lib/retry-utils';
 import type { ToaNhaDocument } from '@/lib/api-types';
 import { z } from 'zod';
@@ -49,9 +49,16 @@ export async function GET(
     }
 
     // Populate chuSoHuu
-    if (toaNha.chuSoHuu) {
-      const chuSoHuu = await withRetry(() => NguoiDungGS.findById(toaNha.chuSoHuu as string));
-      toaNha.chuSoHuu = chuSoHuu ? { _id: chuSoHuu._id, ten: chuSoHuu.ten, email: chuSoHuu.email } : null;
+    const chuSoHuuId = normalizeId(toaNha.chuSoHuu);
+    if (chuSoHuuId) {
+      const chuSoHuu = await withRetry(() => NguoiDungGS.findById(chuSoHuuId));
+      if (chuSoHuu) {
+        (toaNha as { chuSoHuu?: unknown }).chuSoHuu = {
+          _id: chuSoHuu._id,
+          ten: (chuSoHuu as { ten?: string }).ten || '',
+          email: (chuSoHuu as { email?: string }).email || ''
+        };
+      }
     }
 
     // Tính tổng số phòng thực tế
@@ -136,9 +143,16 @@ export async function PUT(
     }
 
     // Populate chuSoHuu
-    if (updatedToaNha.chuSoHuu) {
-      const chuSoHuu = await withRetry(() => NguoiDungGS.findById(updatedToaNha.chuSoHuu as string));
-      updatedToaNha.chuSoHuu = chuSoHuu ? { _id: chuSoHuu._id, ten: chuSoHuu.ten, email: chuSoHuu.email } : null;
+    const chuSoHuuId = normalizeId(updatedToaNha.chuSoHuu);
+    if (chuSoHuuId) {
+      const chuSoHuu = await withRetry(() => NguoiDungGS.findById(chuSoHuuId));
+      if (chuSoHuu) {
+        (updatedToaNha as { chuSoHuu?: unknown }).chuSoHuu = {
+          _id: chuSoHuu._id,
+          ten: (chuSoHuu as { ten?: string }).ten || '',
+          email: (chuSoHuu as { email?: string }).email || ''
+        };
+      }
     }
 
     // Tính tổng số phòng thực tế

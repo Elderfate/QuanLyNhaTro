@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const hopDongId = searchParams.get('hopDong');
-    const thang = parseInt(searchParams.get('thang') || '1');
-    const nam = parseInt(searchParams.get('nam') || new Date().getFullYear());
+    const thang = parseInt(searchParams.get('thang') || '1', 10);
+    const nam = parseInt(searchParams.get('nam') || String(new Date().getFullYear()), 10);
 
     if (!hopDongId) {
       return badRequestResponse('Thiếu ID hợp đồng');
