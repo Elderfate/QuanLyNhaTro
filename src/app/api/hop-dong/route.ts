@@ -97,18 +97,42 @@ export async function POST(request: NextRequest) {
       trangThai: 'hoatDong', // Set default status
     });
 
+    console.log(`✅ Created new contract: ${newHopDong._id} for phong: ${validatedData.phong}`);
+
     // Cập nhật trạng thái phòng và khách thuê SAU KHI hợp đồng đã được tạo
     // Đảm bảo hợp đồng mới đã có trong database trước khi tính toán trạng thái
-    // Wait a bit to ensure contract is saved
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait a bit to ensure contract is saved to Google Sheets
+    await new Promise(resolve => setTimeout(resolve, 500));
     
-    await updatePhongStatus(validatedData.phong);
-    await updateAllKhachThueStatus(validatedData.khachThueId);
+    // Refresh hopDong data to ensure we have the latest
+    console.log(`🔄 Refreshing contract data before status update...`);
     
-    // Double check - update again after a short delay to ensure status is correct
-    setTimeout(async () => {
+    // Update phong status - this will fetch fresh contract data
+    try {
       await updatePhongStatus(validatedData.phong);
-    }, 500);
+    } catch (error) {
+      console.error('Error updating phong status:', error);
+      // Continue even if status update fails
+    }
+    
+    // Update khach thue status
+    try {
+      await updateAllKhachThueStatus(validatedData.khachThueId);
+    } catch (error) {
+      console.error('Error updating khach thue status:', error);
+      // Continue even if status update fails
+    }
+    
+    // Double check - update again after a longer delay to ensure status is correct
+    // This handles cases where Google Sheets might have eventual consistency
+    setTimeout(async () => {
+      try {
+        console.log(`🔄 Double-checking phong status after delay...`);
+        await updatePhongStatus(validatedData.phong);
+      } catch (error) {
+        console.error('Error in delayed phong status update:', error);
+      }
+    }, 1000);
 
     // Cập nhật phòng với thông tin khách thuê (nguoiDaiDien)
     const nguoiDaiDien = allKhachThue.find((kt: any) => kt._id === validatedData.nguoiDaiDien);

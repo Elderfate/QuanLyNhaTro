@@ -178,34 +178,58 @@ export default function ThemMoiHoaDonPage() {
 
   const calculateTotal = useCallback(() => {
     setFormData(prev => {
-      // Đảm bảo phiDichVu luôn là array
-      const phiDichVuArray = Array.isArray(prev.phiDichVu) ? prev.phiDichVu : [];
-      const totalPhiDichVu = phiDichVuArray.reduce((sum: number, phi) => {
-        return sum + (typeof phi.gia === 'number' ? phi.gia : 0);
-      }, 0);
-      
-      const soDien = (prev.chiSoDienCuoiKy || 0) - (prev.chiSoDienBanDau || 0);
-      const soNuoc = (prev.chiSoNuocCuoiKy || 0) - (prev.chiSoNuocBanDau || 0);
-      
-      const selectedHopDong = Array.isArray(hopDongList) ? hopDongList.find(hd => hd._id === prev.hopDong) : null;
-      const giaDien = selectedHopDong?.giaDien || 0;
-      const giaNuoc = selectedHopDong?.giaNuoc || 0;
-      
-      const tienDienTinh = soDien * giaDien;
-      const tienNuocTinh = soNuoc * giaNuoc;
-      
-      const total = (prev.tienPhong || 0) + tienDienTinh + tienNuocTinh + totalPhiDichVu;
-      const conLai = total - (prev.daThanhToan || 0);
-      
-      return {
-        ...prev,
-        soDien: Math.max(0, soDien),
-        soNuoc: Math.max(0, soNuoc),
-        tienDien: tienDienTinh,
-        tienNuoc: tienNuocTinh,
-        tongTien: total,
-        conLai: conLai
-      };
+      try {
+        // Đảm bảo phiDichVu luôn là array
+        const phiDichVuArray = Array.isArray(prev.phiDichVu) ? prev.phiDichVu : [];
+        const totalPhiDichVu = phiDichVuArray.reduce((sum: number, phi) => {
+          if (!phi || typeof phi !== 'object') return sum;
+          const gia = typeof phi.gia === 'number' && !isNaN(phi.gia) ? phi.gia : 0;
+          return sum + gia;
+        }, 0);
+        
+        // Ensure all values are numbers
+        const chiSoDienCuoiKy = typeof prev.chiSoDienCuoiKy === 'number' && !isNaN(prev.chiSoDienCuoiKy) ? prev.chiSoDienCuoiKy : 0;
+        const chiSoDienBanDau = typeof prev.chiSoDienBanDau === 'number' && !isNaN(prev.chiSoDienBanDau) ? prev.chiSoDienBanDau : 0;
+        const chiSoNuocCuoiKy = typeof prev.chiSoNuocCuoiKy === 'number' && !isNaN(prev.chiSoNuocCuoiKy) ? prev.chiSoNuocCuoiKy : 0;
+        const chiSoNuocBanDau = typeof prev.chiSoNuocBanDau === 'number' && !isNaN(prev.chiSoNuocBanDau) ? prev.chiSoNuocBanDau : 0;
+        
+        const soDien = Math.max(0, chiSoDienCuoiKy - chiSoDienBanDau);
+        const soNuoc = Math.max(0, chiSoNuocCuoiKy - chiSoNuocBanDau);
+        
+        // Safely get hopDong data
+        const selectedHopDong = Array.isArray(hopDongList) && hopDongList.length > 0 && prev.hopDong
+          ? hopDongList.find(hd => hd && hd._id === prev.hopDong)
+          : null;
+        
+        const giaDien = selectedHopDong && typeof selectedHopDong.giaDien === 'number' && !isNaN(selectedHopDong.giaDien)
+          ? selectedHopDong.giaDien
+          : 0;
+        const giaNuoc = selectedHopDong && typeof selectedHopDong.giaNuoc === 'number' && !isNaN(selectedHopDong.giaNuoc)
+          ? selectedHopDong.giaNuoc
+          : 0;
+        
+        const tienDienTinh = soDien * giaDien;
+        const tienNuocTinh = soNuoc * giaNuoc;
+        
+        const tienPhong = typeof prev.tienPhong === 'number' && !isNaN(prev.tienPhong) ? prev.tienPhong : 0;
+        const daThanhToan = typeof prev.daThanhToan === 'number' && !isNaN(prev.daThanhToan) ? prev.daThanhToan : 0;
+        
+        const total = tienPhong + tienDienTinh + tienNuocTinh + totalPhiDichVu;
+        const conLai = total - daThanhToan;
+        
+        return {
+          ...prev,
+          soDien: soDien,
+          soNuoc: soNuoc,
+          tienDien: tienDienTinh,
+          tienNuoc: tienNuocTinh,
+          tongTien: total,
+          conLai: conLai
+        };
+      } catch (error) {
+        console.error('Error in calculateTotal:', error);
+        return prev; // Return previous state on error
+      }
     });
   }, [hopDongList]);
 

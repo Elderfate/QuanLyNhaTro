@@ -7,46 +7,73 @@ import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
  */
 export async function calculatePhongStatus(phongId: string): Promise<'trong' | 'daDat' | 'dangThue' | 'baoTri'> {
   try {
+    // Normalize phongId to string
+    const normalizedPhongId = String(phongId);
+    
+    // Fetch fresh data from Google Sheets
     const allHopDong = await HopDongGS.find();
     const now = new Date();
+    
+    console.log(`🔍 Calculating status for phong ${normalizedPhongId}, found ${allHopDong.length} contracts`);
 
     // Tìm hợp đồng đang hoạt động của phòng
     const hopDongHoatDong = allHopDong.find((hd: any) => {
-      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
-      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      if (!hd || hd.trangThai !== 'hoatDong') return false;
+      
       // Normalize phong ID - handle both string and object
       let phongIdFromHd = hd.phong;
       if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
         phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
       }
-      return String(phongIdFromHd) === String(phongId) &&
-             hd.trangThai === 'hoatDong' &&
-             ngayBatDau && ngayBatDau <= now &&
-             ngayKetThuc && ngayKetThuc >= now;
+      const normalizedPhongIdFromHd = String(phongIdFromHd);
+      
+      if (normalizedPhongIdFromHd !== normalizedPhongId) return false;
+      
+      // Check date range
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      
+      if (!ngayBatDau || !ngayKetThuc) return false;
+      
+      // Check if contract is currently active
+      const isActive = ngayBatDau <= now && ngayKetThuc >= now;
+      
+      if (isActive) {
+        console.log(`✅ Found active contract for phong ${normalizedPhongId}: ${hd.maHopDong || hd._id}`);
+      }
+      
+      return isActive;
     });
 
     if (hopDongHoatDong) {
+      console.log(`📊 Phong ${normalizedPhongId} status: dangThue`);
       return 'dangThue';
     }
 
     // Kiểm tra có hợp đồng đã đặt nhưng chưa bắt đầu không
     const hopDongDaDat = allHopDong.find((hd: any) => {
-      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      if (!hd || hd.trangThai !== 'hoatDong') return false;
+      
       // Normalize phong ID - handle both string and object
       let phongIdFromHd = hd.phong;
       if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
         phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
       }
-      return String(phongIdFromHd) === String(phongId) &&
-             hd.trangThai === 'hoatDong' &&
-             ngayBatDau && ngayBatDau > now;
+      const normalizedPhongIdFromHd = String(phongIdFromHd);
+      
+      if (normalizedPhongIdFromHd !== normalizedPhongId) return false;
+      
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      return ngayBatDau && ngayBatDau > now;
     });
 
     if (hopDongDaDat) {
+      console.log(`📊 Phong ${normalizedPhongId} status: daDat`);
       return 'daDat';
     }
 
     // Mặc định là trống
+    console.log(`📊 Phong ${normalizedPhongId} status: trong`);
     return 'trong';
   } catch (error) {
     console.error('Error calculating phong status:', error);
@@ -102,20 +129,34 @@ export async function calculateKhachThueStatus(khachThueId: string): Promise<'da
  */
 export async function updatePhongStatus(phongId: string): Promise<void> {
   try {
-    const newStatus = await calculatePhongStatus(phongId);
-    console.log(`📊 Updating phong ${phongId} status to: ${newStatus}`);
-    const result = await PhongGS.findByIdAndUpdate(phongId, { 
+    const normalizedPhongId = String(phongId);
+    console.log(`🔄 Starting status update for phong ${normalizedPhongId}`);
+    
+    // Calculate new status
+    const newStatus = await calculatePhongStatus(normalizedPhongId);
+    console.log(`📊 Calculated status for phong ${normalizedPhongId}: ${newStatus}`);
+    
+    // Update in Google Sheets
+    const result = await PhongGS.findByIdAndUpdate(normalizedPhongId, { 
       trangThai: newStatus,
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
     });
+    
     if (result) {
-      console.log(`✅ Successfully updated phong ${phongId} status to: ${newStatus}`);
+      console.log(`✅ Successfully updated phong ${normalizedPhongId} status to: ${newStatus}`);
+      
+      // Verify the update by fetching the phong again
+      const verifyPhong = await PhongGS.findById(normalizedPhongId);
+      if (verifyPhong) {
+        console.log(`✅ Verified: phong ${normalizedPhongId} now has status: ${verifyPhong.trangThai}`);
+      }
     } else {
-      console.warn(`⚠️ Failed to update phong ${phongId} - not found`);
+      console.warn(`⚠️ Failed to update phong ${normalizedPhongId} - not found`);
     }
   } catch (error) {
     console.error(`❌ Error updating phong ${phongId} status:`, error);
+    throw error; // Re-throw to allow caller to handle
   }
 }
 
