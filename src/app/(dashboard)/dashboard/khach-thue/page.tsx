@@ -678,13 +678,27 @@ function KhachThueForm({
 
       if (response.ok) {
         const result = await response.json();
+        console.log('📥 API Response:', {
+          success: result.success,
+          dataAnhCCCD: result.data?.anhCCCD,
+          hasMatTruoc: !!result.data?.anhCCCD?.matTruoc,
+          hasMatSau: !!result.data?.anhCCCD?.matSau,
+          matTruocUrl: result.data?.anhCCCD?.matTruoc,
+          matSauUrl: result.data?.anhCCCD?.matSau
+        });
+        
         if (result.success) {
+          // Ensure we have the updated CCCD images in the response
+          if (result.data && result.data.anhCCCD) {
+            console.log('✅ CCCD images in response:', result.data.anhCCCD);
+          }
           onSuccess(result.data);
         } else {
           toast.error(result.message || 'Có lỗi xảy ra');
         }
       } else {
         const error = await response.json();
+        console.error('❌ API Error:', error);
         toast.error(error.message || 'Có lỗi xảy ra');
       }
     } catch (error) {
