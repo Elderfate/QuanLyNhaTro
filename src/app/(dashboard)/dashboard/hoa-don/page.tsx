@@ -41,7 +41,8 @@ import {
   Home,
   Edit,
   Trash2,
-  Image
+  Image,
+  Layers
 } from 'lucide-react';
 import { HoaDon, HopDong, Phong, KhachThue } from '@/types';
 import { toast } from 'sonner';
@@ -415,11 +416,23 @@ export default function HoaDonPage() {
             <RefreshCw className={`h-4 w-4 sm:mr-2 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">{loading ? 'Đang tải...' : 'Tải mới'}</span>
           </Button>
-          <Button size="sm" onClick={() => router.push('/dashboard/hoa-don/them-moi')} className="flex-1 sm:flex-none">
-            <Plus className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Tạo hóa đơn</span>
-            <span className="sm:hidden">Tạo</span>
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => router.push('/dashboard/hoa-don/tao-hang-loat')} 
+              className="flex-1 sm:flex-none"
+            >
+              <Layers className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Tạo hàng loạt</span>
+              <span className="sm:hidden">Hàng loạt</span>
+            </Button>
+            <Button size="sm" onClick={() => router.push('/dashboard/hoa-don/them-moi')} className="flex-1 sm:flex-none">
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Tạo hóa đơn</span>
+              <span className="sm:hidden">Tạo</span>
+            </Button>
+          </div>
         </div>
       </div>
 
