@@ -188,17 +188,34 @@ export async function PUT(
       );
     }
 
-    // Ensure anhCCCD is included in response
+    // Ensure anhCCCD is included in response - get fresh data after update
+    const updatedKhachThue = await KhachThueGS.findById(id);
+    
     const responseData = {
-      ...khachThue,
-      anhCCCD: khachThue.anhCCCD || { matTruoc: '', matSau: '' }
+      ...updatedKhachThue,
+      anhCCCD: updatedKhachThue?.anhCCCD || { matTruoc: '', matSau: '' }
     };
+    
+    // Ensure anhCCCD is properly structured
+    if (!responseData.anhCCCD || typeof responseData.anhCCCD !== 'object') {
+      responseData.anhCCCD = { matTruoc: '', matSau: '' };
+    }
+    
+    // Extract matTruoc and matSau from the object
+    const anhCCCDObj = updatedKhachThue?.anhCCCD || {};
+    if (typeof anhCCCDObj === 'object' && !Array.isArray(anhCCCDObj)) {
+      responseData.anhCCCD = {
+        matTruoc: anhCCCDObj.matTruoc || '',
+        matSau: anhCCCDObj.matSau || ''
+      };
+    }
     
     console.log('✅ Response data with anhCCCD:', {
       matTruoc: responseData.anhCCCD?.matTruoc,
       matSau: responseData.anhCCCD?.matSau,
       hasMatTruoc: !!responseData.anhCCCD?.matTruoc,
-      hasMatSau: !!responseData.anhCCCD?.matSau
+      hasMatSau: !!responseData.anhCCCD?.matSau,
+      rawAnhCCCD: updatedKhachThue?.anhCCCD
     });
 
     return NextResponse.json({

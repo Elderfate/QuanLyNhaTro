@@ -177,35 +177,37 @@ export default function ThemMoiHoaDonPage() {
   }, [formData.thang, formData.nam, formData.hopDong, fetchLatestElectricityReading]);
 
   const calculateTotal = useCallback(() => {
-    const totalPhiDichVu = formData.phiDichVu.reduce((sum: number, phi) => sum + phi.gia, 0);
-    
-    const soDien = formData.chiSoDienCuoiKy - formData.chiSoDienBanDau;
-    const soNuoc = formData.chiSoNuocCuoiKy - formData.chiSoNuocBanDau;
-    
-    const selectedHopDong = hopDongList.find(hd => hd._id === formData.hopDong);
-    const giaDien = selectedHopDong?.giaDien || 0;
-    const giaNuoc = selectedHopDong?.giaNuoc || 0;
-    
-    const tienDienTinh = soDien * giaDien;
-    const tienNuocTinh = soNuoc * giaNuoc;
-    
-    const total = formData.tienPhong + tienDienTinh + tienNuocTinh + totalPhiDichVu;
-    const conLai = total - formData.daThanhToan;
-    
-    setFormData(prev => ({
-      ...prev,
-      soDien: Math.max(0, soDien),
-      soNuoc: Math.max(0, soNuoc),
-      tienDien: tienDienTinh,
-      tienNuoc: tienNuocTinh,
-      tongTien: total,
-      conLai: conLai
-    }));
-  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, formData.phiDichVu, formData.daThanhToan, formData.hopDong, hopDongList]);
+    setFormData(prev => {
+      const totalPhiDichVu = prev.phiDichVu.reduce((sum: number, phi) => sum + phi.gia, 0);
+      
+      const soDien = prev.chiSoDienCuoiKy - prev.chiSoDienBanDau;
+      const soNuoc = prev.chiSoNuocCuoiKy - prev.chiSoNuocBanDau;
+      
+      const selectedHopDong = hopDongList.find(hd => hd._id === prev.hopDong);
+      const giaDien = selectedHopDong?.giaDien || 0;
+      const giaNuoc = selectedHopDong?.giaNuoc || 0;
+      
+      const tienDienTinh = soDien * giaDien;
+      const tienNuocTinh = soNuoc * giaNuoc;
+      
+      const total = prev.tienPhong + tienDienTinh + tienNuocTinh + totalPhiDichVu;
+      const conLai = total - prev.daThanhToan;
+      
+      return {
+        ...prev,
+        soDien: Math.max(0, soDien),
+        soNuoc: Math.max(0, soNuoc),
+        tienDien: tienDienTinh,
+        tienNuoc: tienNuocTinh,
+        tongTien: total,
+        conLai: conLai
+      };
+    });
+  }, [hopDongList]);
 
   useEffect(() => {
     calculateTotal();
-  }, [calculateTotal]);
+  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, formData.phiDichVu.length, formData.daThanhToan, formData.hopDong, calculateTotal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

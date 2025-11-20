@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
+import { updatePhongStatus, updateAllKhachThueStatus } from '@/lib/status-utils';
 import { z } from 'zod';
 
 const phiDichVuSchema = z.object({
@@ -93,11 +94,31 @@ export async function POST(request: NextRequest) {
       ngayBatDau: new Date(validatedData.ngayBatDau).toISOString(),
       ngayKetThuc: new Date(validatedData.ngayKetThuc).toISOString(),
       phiDichVu: validatedData.phiDichVu || [],
+      trangThai: 'hoatDong', // Set default status
     });
 
-    // TODO: Implement status update functions for Google Sheets if needed
-    // await updatePhongStatus(validatedData.phong);
-    // await updateAllKhachThueStatus(validatedData.khachThueId);
+    // Cập nhật trạng thái phòng và khách thuê
+    await updatePhongStatus(validatedData.phong);
+    await updateAllKhachThueStatus(validatedData.khachThueId);
+
+    // Cập nhật phòng với thông tin khách thuê (nguoiDaiDien)
+    const nguoiDaiDien = allKhachThue.find((kt: any) => kt._id === validatedData.nguoiDaiDien);
+    if (nguoiDaiDien) {
+      await PhongGS.findByIdAndUpdate(validatedData.phong, {
+        nguoiThue: validatedData.nguoiDaiDien,
+        updatedAt: new Date().toISOString(),
+        ngayCapNhat: new Date().toISOString(),
+      });
+    }
+
+    // Cập nhật khách thuê với thông tin phòng đang thuê
+    for (const khachThueId of validatedData.khachThueId) {
+      await KhachThueGS.findByIdAndUpdate(khachThueId, {
+        phongDangThue: validatedData.phong,
+        updatedAt: new Date().toISOString(),
+        ngayCapNhat: new Date().toISOString(),
+      });
+    }
 
     return NextResponse.json({
       success: true,
