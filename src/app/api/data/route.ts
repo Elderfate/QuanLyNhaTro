@@ -134,17 +134,16 @@ function populateRelationships(
     
     // Tìm hợp đồng hiện tại cho phòng này
     const hopDongHienTai = hopDong.find((hd: any) => {
+      if (hd.trangThai !== 'hoatDong') return false;
+      
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      // Normalize phong ID - handle both string and object
-      let phongId = hd.phong;
-      if (typeof phongId === 'object' && phongId !== null) {
-        phongId = phongId._id || phongId.id || phongId;
-      }
-      return String(phongId) === String(p._id) &&
-             hd.trangThai === 'hoatDong' &&
-             ngayBatDau && ngayBatDau <= now &&
-             ngayKetThuc && ngayKetThuc >= now;
+      
+      if (!ngayBatDau || !ngayKetThuc) return false;
+      if (ngayBatDau > now || ngayKetThuc < now) return false;
+      
+      // Use normalized ID comparison
+      return compareIds(hd.phong, p._id);
     });
     
     // Tính toán lại trạng thái dựa trên hợp đồng hiện tại
@@ -160,14 +159,9 @@ function populateRelationships(
       // Nếu trạng thái là 'dangThue' nhưng không có hợp đồng -> có thể là 'trong'
       if (p.trangThai === 'dangThue') {
         // Kiểm tra lại xem có hợp đồng nào không (kể cả chưa bắt đầu)
-        const hasAnyContract = hopDong.some((hd: any) => {
-          const pId = String(p._id);
-          let phongIdFromHd = hd.phong;
-          if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
-            phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
-          }
-          return String(phongIdFromHd) === pId && hd.trangThai === 'hoatDong';
-        });
+        const hasAnyContract = hopDong.some((hd: any) => 
+          hd.trangThai === 'hoatDong' && compareIds(hd.phong, p._id)
+        );
         
         if (!hasAnyContract) {
           console.log(`⚠️ Phong ${p.maPhong} (${p._id}) has status 'dangThue' but no contract, correcting to 'trong'`);

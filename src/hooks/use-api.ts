@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { invalidateEntityQueries, invalidateAppData } from '@/lib/query-invalidation';
 import type { 
   ToaNha, 
   Phong, 
@@ -106,7 +107,7 @@ export const useCreateToaNhaMutation = () => {
     mutationFn: (data: Omit<ToaNha, '_id'>) => 
       apiClient.post<ToaNha>('/api/toa-nha', data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'toaNha');
     },
   });
 };
@@ -116,8 +117,8 @@ export const useUpdateToaNhaMutation = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<ToaNha> }) =>
       apiClient.put<ToaNha>(`/api/toa-nha/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+    onSuccess: (_, variables) => {
+      invalidateEntityQueries(queryClient, 'toaNha', variables.id);
     },
   });
 };
@@ -127,7 +128,7 @@ export const useDeleteToaNhaMutation = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/api/toa-nha/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'toaNha');
     },
   });
 };
@@ -162,7 +163,7 @@ export const useCreatePhongMutation = () => {
     mutationFn: (data: Omit<Phong, '_id'>) => 
       apiClient.post<Phong>('/api/phong', data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'phong');
     },
   });
 };
@@ -173,8 +174,7 @@ export const useUpdatePhongMutation = () => {
     mutationFn: ({ id, data }: { id: string; data: Partial<Phong> }) =>
       apiClient.put<Phong>(`/api/phong/${id}`, data),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.phongById(variables.id) });
+      invalidateEntityQueries(queryClient, 'phong', variables.id);
     },
   });
 };
@@ -184,7 +184,7 @@ export const useDeletePhongMutation = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/api/phong/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'phong');
     },
   });
 };
@@ -302,9 +302,9 @@ export const useCreateHopDongMutation = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'hopDong');
+      invalidateEntityQueries(queryClient, 'phong');
+      invalidateEntityQueries(queryClient, 'khachThue');
     },
   });
 };
@@ -341,10 +341,7 @@ export const useUpdateHopDongMutation = () => {
       }
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.hopDongById(variables.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'hopDong', variables.id);
     },
   });
 };
@@ -371,9 +368,9 @@ export const useDeleteHopDongMutation = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'hopDong');
+      invalidateEntityQueries(queryClient, 'phong');
+      invalidateEntityQueries(queryClient, 'khachThue');
     },
   });
 };
@@ -539,8 +536,8 @@ export const useCreateThanhToanMutation = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'thanhToan');
+      invalidateEntityQueries(queryClient, 'hoaDon');
     },
   });
 };
@@ -551,8 +548,8 @@ export const useUpdateThanhToanMutation = () => {
     mutationFn: ({ id, data }: { id: string; data: Partial<ThanhToan> }) =>
       apiClient.put<ThanhToan>(`/api/thanh-toan/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'thanhToan');
+      invalidateEntityQueries(queryClient, 'hoaDon');
     },
   });
 };
@@ -562,8 +559,8 @@ export const useDeleteThanhToanMutation = () => {
   return useMutation({
     mutationFn: (id: string) => apiClient.delete(`/api/thanh-toan/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
-      queryClient.invalidateQueries({ queryKey: queryKeys.appData });
+      invalidateEntityQueries(queryClient, 'thanhToan');
+      invalidateEntityQueries(queryClient, 'hoaDon');
     },
   });
 };

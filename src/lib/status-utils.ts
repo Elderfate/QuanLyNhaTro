@@ -1,4 +1,6 @@
 import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
+import { normalizeId, compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
 
 /**
  * Tính trạng thái phòng dựa trên hợp đồng
@@ -8,10 +10,14 @@ import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
 export async function calculatePhongStatus(phongId: string): Promise<'trong' | 'daDat' | 'dangThue' | 'baoTri'> {
   try {
     // Normalize phongId to string
-    const normalizedPhongId = String(phongId);
+    const normalizedPhongId = normalizeId(phongId);
+    if (!normalizedPhongId) {
+      console.warn('⚠️ Invalid phongId provided:', phongId);
+      return 'trong';
+    }
     
-    // Fetch fresh data from Google Sheets
-    const allHopDong = await HopDongGS.find();
+    // Fetch fresh data from Google Sheets with retry
+    const allHopDong = await withRetry(() => HopDongGS.find());
     const now = new Date();
     
     console.log(`🔍 Calculating status for phong ${normalizedPhongId}, found ${allHopDong.length} contracts`);
@@ -20,14 +26,8 @@ export async function calculatePhongStatus(phongId: string): Promise<'trong' | '
     const hopDongHoatDong = allHopDong.find((hd: any) => {
       if (!hd || hd.trangThai !== 'hoatDong') return false;
       
-      // Normalize phong ID - handle both string and object
-      let phongIdFromHd = hd.phong;
-      if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
-        phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
-      }
-      const normalizedPhongIdFromHd = String(phongIdFromHd);
-      
-      if (normalizedPhongIdFromHd !== normalizedPhongId) return false;
+      // Use normalized ID comparison
+      if (!compareIds(hd.phong, normalizedPhongId)) return false;
       
       // Check date range
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
@@ -54,14 +54,8 @@ export async function calculatePhongStatus(phongId: string): Promise<'trong' | '
     const hopDongDaDat = allHopDong.find((hd: any) => {
       if (!hd || hd.trangThai !== 'hoatDong') return false;
       
-      // Normalize phong ID - handle both string and object
-      let phongIdFromHd = hd.phong;
-      if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
-        phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
-      }
-      const normalizedPhongIdFromHd = String(phongIdFromHd);
-      
-      if (normalizedPhongIdFromHd !== normalizedPhongId) return false;
+      // Use normalized ID comparison
+      if (!compareIds(hd.phong, normalizedPhongId)) return false;
       
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       return ngayBatDau && ngayBatDau > now;
@@ -88,18 +82,29 @@ export async function calculatePhongStatus(phongId: string): Promise<'trong' | '
  */
 export async function calculateKhachThueStatus(khachThueId: string): Promise<'dangThue' | 'daTraPhong' | 'chuaThue'> {
   try {
-    const allHopDong = await HopDongGS.find();
+    const normalizedKhachThueId = normalizeId(khachThueId);
+    if (!normalizedKhachThueId) {
+      console.warn('⚠️ Invalid khachThueId provided:', khachThueId);
+      return 'chuaThue';
+    }
+    
+    const allHopDong = await withRetry(() => HopDongGS.find());
     const now = new Date();
 
     // Tìm hợp đồng đang hoạt động của khách thuê
     const hopDongHoatDong = allHopDong.find((hd: any) => {
+      if (hd.trangThai !== 'hoatDong') return false;
+      
+      // Check if khachThueId is in the contract's tenant list
       const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [hd.khachThueId];
+      const isInTenantList = khachThueIds.some((id: any) => compareIds(id, normalizedKhachThueId));
+      const isRepresentative = compareIds(hd.nguoiDaiDien, normalizedKhachThueId);
+      
+      if (!isInTenantList && !isRepresentative) return false;
+      
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      return (khachThueIds.includes(khachThueId) || hd.nguoiDaiDien === khachThueId) &&
-             hd.trangThai === 'hoatDong' &&
-             ngayBatDau && ngayBatDau <= now &&
-             ngayKetThuc && ngayKetThuc >= now;
+      return ngayBatDau && ngayBatDau <= now && ngayKetThuc && ngayKetThuc >= now;
     });
 
     if (hopDongHoatDong) {
@@ -109,7 +114,9 @@ export async function calculateKhachThueStatus(khachThueId: string): Promise<'da
     // Kiểm tra xem khách thuê đã từng có hợp đồng nào chưa
     const hopDongDaCo = allHopDong.find((hd: any) => {
       const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [hd.khachThueId];
-      return khachThueIds.includes(khachThueId) || hd.nguoiDaiDien === khachThueId;
+      const isInTenantList = khachThueIds.some((id: any) => compareIds(id, normalizedKhachThueId));
+      const isRepresentative = compareIds(hd.nguoiDaiDien, normalizedKhachThueId);
+      return isInTenantList || isRepresentative;
     });
 
     if (hopDongDaCo) {
@@ -129,25 +136,32 @@ export async function calculateKhachThueStatus(khachThueId: string): Promise<'da
  */
 export async function updatePhongStatus(phongId: string): Promise<void> {
   try {
-    const normalizedPhongId = String(phongId);
+    const normalizedPhongId = normalizeId(phongId);
+    if (!normalizedPhongId) {
+      console.warn('⚠️ Cannot update phong status: invalid ID', phongId);
+      return;
+    }
+    
     console.log(`🔄 Starting status update for phong ${normalizedPhongId}`);
     
     // Calculate new status
     const newStatus = await calculatePhongStatus(normalizedPhongId);
     console.log(`📊 Calculated status for phong ${normalizedPhongId}: ${newStatus}`);
     
-    // Update in Google Sheets
-    const result = await PhongGS.findByIdAndUpdate(normalizedPhongId, { 
-      trangThai: newStatus,
-      updatedAt: new Date().toISOString(),
-      ngayCapNhat: new Date().toISOString(),
-    });
+    // Update in Google Sheets with retry
+    const result = await withRetry(() => 
+      PhongGS.findByIdAndUpdate(normalizedPhongId, { 
+        trangThai: newStatus,
+        updatedAt: new Date().toISOString(),
+        ngayCapNhat: new Date().toISOString(),
+      })
+    );
     
     if (result) {
       console.log(`✅ Successfully updated phong ${normalizedPhongId} status to: ${newStatus}`);
       
       // Verify the update by fetching the phong again
-      const verifyPhong = await PhongGS.findById(normalizedPhongId);
+      const verifyPhong = await withRetry(() => PhongGS.findById(normalizedPhongId));
       if (verifyPhong) {
         console.log(`✅ Verified: phong ${normalizedPhongId} now has status: ${verifyPhong.trangThai}`);
       }
@@ -166,12 +180,20 @@ export async function updatePhongStatus(phongId: string): Promise<void> {
  */
 export async function updateKhachThueStatus(khachThueId: string): Promise<void> {
   try {
-    const newStatus = await calculateKhachThueStatus(khachThueId);
-    await KhachThueGS.findByIdAndUpdate(khachThueId, { 
-      trangThai: newStatus,
-      updatedAt: new Date().toISOString(),
-      ngayCapNhat: new Date().toISOString(),
-    });
+    const normalizedKhachThueId = normalizeId(khachThueId);
+    if (!normalizedKhachThueId) {
+      console.warn('⚠️ Cannot update khach thue status: invalid ID', khachThueId);
+      return;
+    }
+    
+    const newStatus = await calculateKhachThueStatus(normalizedKhachThueId);
+    await withRetry(() => 
+      KhachThueGS.findByIdAndUpdate(normalizedKhachThueId, { 
+        trangThai: newStatus,
+        updatedAt: new Date().toISOString(),
+        ngayCapNhat: new Date().toISOString(),
+      })
+    );
   } catch (error) {
     console.error('Error updating khach thue status:', error);
   }
@@ -188,9 +210,12 @@ export async function updateAllPhongStatus(phongId?: string): Promise<void> {
       await updatePhongStatus(phongId);
     } else {
       // Cập nhật trạng thái cho tất cả phòng
-      const allPhong = await PhongGS.find();
+      const allPhong = await withRetry(() => PhongGS.find());
       await Promise.all(
-        allPhong.map((phong: any) => updatePhongStatus(phong._id))
+        allPhong.map((phong: any) => {
+          const id = normalizeId(phong._id);
+          return id ? updatePhongStatus(id) : Promise.resolve();
+        })
       );
     }
   } catch (error) {
@@ -207,13 +232,19 @@ export async function updateAllKhachThueStatus(khachThueIds?: string[]): Promise
     if (khachThueIds && khachThueIds.length > 0) {
       // Cập nhật trạng thái cho khách thuê cụ thể
       await Promise.all(
-        khachThueIds.map(id => updateKhachThueStatus(id))
+        khachThueIds
+          .map(id => normalizeId(id))
+          .filter((id): id is string => id !== null)
+          .map(id => updateKhachThueStatus(id))
       );
     } else {
       // Cập nhật trạng thái cho tất cả khách thuê
-      const allKhachThue = await KhachThueGS.find();
+      const allKhachThue = await withRetry(() => KhachThueGS.find());
       await Promise.all(
-        allKhachThue.map((khach: any) => updateKhachThueStatus(khach._id))
+        allKhachThue
+          .map((khach: any) => normalizeId(khach._id))
+          .filter((id): id is string => id !== null)
+          .map(id => updateKhachThueStatus(id))
       );
     }
   } catch (error) {

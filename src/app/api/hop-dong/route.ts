@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
 import { updatePhongStatus, updateAllKhachThueStatus } from '@/lib/status-utils';
+import { normalizeId, compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
 import { z } from 'zod';
 
 const phiDichVuSchema = z.object({
@@ -45,8 +47,9 @@ export async function POST(request: NextRequest) {
     const validatedData = hopDongSchema.parse(body);
 
     // Check if phong exists
-    const allPhong = await PhongGS.find();
-    const phong = allPhong.find((p: any) => p._id === validatedData.phong);
+    const allPhong = await withRetry(() => PhongGS.find());
+    const normalizedPhongId = normalizeId(validatedData.phong);
+    const phong = allPhong.find((p: any) => compareIds(p._id, normalizedPhongId));
     if (!phong) {
       return NextResponse.json(
         { message: 'Phòng không tồn tại' },
@@ -55,9 +58,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if all khach thue exist
-    const allKhachThue = await KhachThueGS.find();
-    const khachThueList = allKhachThue.filter((kt: any) => validatedData.khachThueId.includes(kt._id));
-    if (khachThueList.length !== validatedData.khachThueId.length) {
+    const allKhachThue = await withRetry(() => KhachThueGS.find());
+    const normalizedKhachThueIds = validatedData.khachThueId.map(id => normalizeId(id)).filter((id): id is string => id !== null);
+    const khachThueList = allKhachThue.filter((kt: any) => 
+      normalizedKhachThueIds.some(id => compareIds(kt._id, id))
+    );
+    if (khachThueList.length !== normalizedKhachThueIds.length) {
       return NextResponse.json(
         { message: 'Một hoặc nhiều khách thuê không tồn tại' },
         { status: 400 }
@@ -65,7 +71,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if nguoi dai dien is in khach thue list
-    if (!validatedData.khachThueId.includes(validatedData.nguoiDaiDien)) {
+    const normalizedNguoiDaiDien = normalizeId(validatedData.nguoiDaiDien);
+    if (!normalizedKhachThueIds.some(id => compareIds(id, normalizedNguoiDaiDien))) {
       return NextResponse.json(
         { message: 'Người đại diện phải là một trong các khách thuê' },
         { status: 400 }
@@ -73,14 +80,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Kiểm tra phòng có hợp đồng đang hoạt động không
-    const allHopDong = await HopDongGS.find();
-    const existingHopDong = allHopDong.find((hd: any) =>
-      hd.phong === validatedData.phong &&
-      hd.trangThai === 'hoatDong' && (
-        (new Date(hd.ngayBatDau) <= new Date(validatedData.ngayKetThuc) &&
-         new Date(hd.ngayKetThuc) >= new Date(validatedData.ngayBatDau))
-      )
-    );
+    const allHopDong = await withRetry(() => HopDongGS.find());
+    const existingHopDong = allHopDong.find((hd: any) => {
+      if (hd.trangThai !== 'hoatDong') return false;
+      if (!compareIds(hd.phong, normalizedPhongId)) return false;
+      
+      const hdNgayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const hdNgayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      const newNgayBatDau = new Date(validatedData.ngayBatDau);
+      const newNgayKetThuc = new Date(validatedData.ngayKetThuc);
+      
+      if (!hdNgayBatDau || !hdNgayKetThuc) return false;
+      
+      return (hdNgayBatDau <= newNgayKetThuc && hdNgayKetThuc >= newNgayBatDau);
+    });
 
     if (existingHopDong) {
       return NextResponse.json(
@@ -89,36 +102,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const newHopDong = await HopDongGS.create({
+    const newHopDong = await withRetry(() => HopDongGS.create({
       ...validatedData,
+      phong: normalizedPhongId,
+      khachThueId: normalizedKhachThueIds,
+      nguoiDaiDien: normalizedNguoiDaiDien,
       ngayBatDau: new Date(validatedData.ngayBatDau).toISOString(),
       ngayKetThuc: new Date(validatedData.ngayKetThuc).toISOString(),
       phiDichVu: validatedData.phiDichVu || [],
       trangThai: 'hoatDong', // Set default status
-    });
+    }));
 
     console.log(`✅ Created new contract: ${newHopDong._id} for phong: ${validatedData.phong}`);
 
     // Cập nhật trạng thái phòng và khách thuê SAU KHI hợp đồng đã được tạo
-    // Đảm bảo hợp đồng mới đã có trong database trước khi tính toán trạng thái
     // Wait a bit to ensure contract is saved to Google Sheets
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Refresh hopDong data to ensure we have the latest
-    console.log(`🔄 Refreshing contract data before status update...`);
     
     // Update phong status - this will fetch fresh contract data
     // Force update to 'dangThue' since we just created an active contract
     try {
-      const normalizedPhongId = String(validatedData.phong);
       console.log(`🔄 Force updating phong ${normalizedPhongId} status to 'dangThue'...`);
       
       // Directly update to 'dangThue' since we know there's an active contract
-      await PhongGS.findByIdAndUpdate(normalizedPhongId, {
+      await withRetry(() => PhongGS.findByIdAndUpdate(normalizedPhongId, {
         trangThai: 'dangThue',
+        nguoiThue: normalizedNguoiDaiDien,
         updatedAt: new Date().toISOString(),
         ngayCapNhat: new Date().toISOString(),
-      });
+      }));
       
       console.log(`✅ Directly updated phong ${normalizedPhongId} status to 'dangThue'`);
       
@@ -129,48 +141,21 @@ export async function POST(request: NextRequest) {
       // Continue even if status update fails
     }
     
-    // Update khach thue status
+    // Update khach thue status and phongDangThue
     try {
-      await updateAllKhachThueStatus(validatedData.khachThueId);
+      await Promise.all([
+        updateAllKhachThueStatus(normalizedKhachThueIds),
+        ...normalizedKhachThueIds.map(id => 
+          withRetry(() => KhachThueGS.findByIdAndUpdate(id, {
+            phongDangThue: normalizedPhongId,
+            updatedAt: new Date().toISOString(),
+            ngayCapNhat: new Date().toISOString(),
+          }))
+        )
+      ]);
     } catch (error) {
       console.error('Error updating khach thue status:', error);
       // Continue even if status update fails
-    }
-    
-    // Double check - update again after a longer delay to ensure status is correct
-    // This handles cases where Google Sheets might have eventual consistency
-    setTimeout(async () => {
-      try {
-        console.log(`🔄 Double-checking phong status after delay...`);
-        const normalizedPhongId = String(validatedData.phong);
-        await PhongGS.findByIdAndUpdate(normalizedPhongId, {
-          trangThai: 'dangThue',
-          updatedAt: new Date().toISOString(),
-          ngayCapNhat: new Date().toISOString(),
-        });
-        await updatePhongStatus(normalizedPhongId);
-      } catch (error) {
-        console.error('Error in delayed phong status update:', error);
-      }
-    }, 2000);
-
-    // Cập nhật phòng với thông tin khách thuê (nguoiDaiDien)
-    const nguoiDaiDien = allKhachThue.find((kt: any) => kt._id === validatedData.nguoiDaiDien);
-    if (nguoiDaiDien) {
-      await PhongGS.findByIdAndUpdate(validatedData.phong, {
-        nguoiThue: validatedData.nguoiDaiDien,
-        updatedAt: new Date().toISOString(),
-        ngayCapNhat: new Date().toISOString(),
-      });
-    }
-
-    // Cập nhật khách thuê với thông tin phòng đang thuê
-    for (const khachThueId of validatedData.khachThueId) {
-      await KhachThueGS.findByIdAndUpdate(khachThueId, {
-        phongDangThue: validatedData.phong,
-        updatedAt: new Date().toISOString(),
-        ngayCapNhat: new Date().toISOString(),
-      });
     }
 
     return NextResponse.json({
