@@ -147,18 +147,27 @@ export default function ThemMoiHoaDonPage() {
       if (selectedHopDong) {
         console.log('Auto-filling form data from contract:', selectedHopDong);
         
+        // Get phong data to get giaThue
+        const phongId = typeof selectedHopDong.phong === 'object' 
+          ? (selectedHopDong.phong as Phong)._id 
+          : selectedHopDong.phong;
+        const phongData = phongList.find(p => p._id === phongId);
+        
         setFormData(prev => ({
           ...prev,
-          phong: selectedHopDong.phong as string,
+          phong: phongId as string,
           khachThue: selectedHopDong.nguoiDaiDien as string,
-          tienPhong: selectedHopDong.giaThue,
+          tienPhong: phongData?.giaThue || selectedHopDong.giaThue || 0, // Lấy từ phòng trước, fallback về hợp đồng
           phiDichVu: selectedHopDong.phiDichVu || [],
           chiSoDienBanDau: 0,
           chiSoNuocBanDau: 0,
         }));
+        
+        // Trigger calculation after auto-fill
+        setTimeout(() => calculateTotal(), 100);
       }
     }
-  }, [formData.hopDong, hopDongList]);
+  }, [formData.hopDong, hopDongList, phongList]);
 
   // Tự động cập nhật chỉ số khi thay đổi tháng/năm (only when thang/nam actually changes)
   useEffect(() => {
@@ -258,7 +267,8 @@ export default function ThemMoiHoaDonPage() {
     formData.chiSoNuocCuoiKy, 
     phiDichVuKey, 
     formData.daThanhToan, 
-    formData.hopDong
+    formData.hopDong,
+    hopDongList // Add hopDongList to dependencies to recalculate when contract data changes
   ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -331,6 +341,8 @@ export default function ThemMoiHoaDonPage() {
         phiDichVu: [...prev.phiDichVu, { ...newPhiDichVu }]
       }));
       setNewPhiDichVu({ ten: '', gia: 0 });
+      // Trigger calculation after adding service fee
+      setTimeout(() => calculateTotal(), 0);
     }
   };
 
@@ -339,6 +351,8 @@ export default function ThemMoiHoaDonPage() {
       ...prev,
       phiDichVu: prev.phiDichVu.filter((_, i) => i !== index)
     }));
+    // Trigger calculation after removing service fee
+    setTimeout(() => calculateTotal(), 0);
   };
 
   if (loading) {

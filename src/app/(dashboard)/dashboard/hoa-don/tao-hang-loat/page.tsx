@@ -54,36 +54,37 @@ export default function TaoHangLoatHoaDonPage() {
 
   // Get active contracts
   const activeContracts = useMemo(() => {
-    if (!allHopDong || allHopDong.length === 0) return [];
+    if (!Array.isArray(safeHopDong) || safeHopDong.length === 0) return [];
     const now = new Date();
-    return allHopDong.filter((hd: HopDong) => {
+    return safeHopDong.filter((hd: HopDong) => {
+      if (!hd || !hd.trangThai) return false;
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
       return hd.trangThai === 'hoatDong' &&
              ngayBatDau && ngayBatDau <= now &&
              ngayKetThuc && ngayKetThuc >= now;
     });
-  }, [allHopDong]);
+  }, [safeHopDong]);
 
   // Get rooms with active contracts
   const availableRooms = useMemo(() => {
-    if (!Array.isArray(allPhong) || !Array.isArray(activeContracts) || !Array.isArray(allHoaDon)) {
+    if (!Array.isArray(safePhong) || !Array.isArray(activeContracts) || !Array.isArray(safeHoaDon)) {
       return [];
     }
     
     const roomMap = new Map<string, { phong: Phong; hopDong: HopDong; hasInvoice: boolean }>();
     
     activeContracts.forEach((hd: HopDong) => {
-      if (!hd) return;
+      if (!hd || !hd._id) return;
       const phongId = typeof hd.phong === 'object' && hd.phong ? hd.phong._id : hd.phong;
       if (!phongId) return;
       
-      const phong = allPhong.find((p: Phong) => p && String(p._id) === String(phongId));
+      const phong = safePhong.find((p: Phong) => p && p._id && String(p._id) === String(phongId));
       if (!phong) return;
 
       // Check if invoice already exists
-      const hasInvoice = allHoaDon.some((hdInvoice: any) => {
-        if (!hdInvoice) return false;
+      const hasInvoice = safeHoaDon.some((hdInvoice: any) => {
+        if (!hdInvoice || !hdInvoice.hopDong) return false;
         const hopDongId = typeof hdInvoice.hopDong === 'object' && hdInvoice.hopDong ? hdInvoice.hopDong._id : hdInvoice.hopDong;
         return String(hopDongId) === String(hd._id) &&
                hdInvoice.thang === thang &&
@@ -96,7 +97,7 @@ export default function TaoHangLoatHoaDonPage() {
     });
 
     return Array.from(roomMap.values());
-  }, [allPhong, activeContracts, allHoaDon, thang, nam]);
+  }, [safePhong, activeContracts, safeHoaDon, thang, nam]);
 
   const togglePhong = (phongId: string) => {
     setSelectedPhongIds(prev => {
@@ -173,13 +174,19 @@ export default function TaoHangLoatHoaDonPage() {
     }
   };
 
-  if (dataLoading) {
+  // Add safety check for data loading
+  if (dataLoading || !allHopDong || !allPhong || !allHoaDon) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
+  
+  // Ensure arrays are valid
+  const safeHopDong = Array.isArray(allHopDong) ? allHopDong : [];
+  const safePhong = Array.isArray(allPhong) ? allPhong : [];
+  const safeHoaDon = Array.isArray(allHoaDon) ? allHoaDon : [];
 
   const selectedCount = selectedPhongIds.size;
   const availableCount = availableRooms.filter(r => !r.hasInvoice).length;

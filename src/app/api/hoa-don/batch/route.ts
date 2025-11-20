@@ -140,7 +140,12 @@ export async function POST(request: NextRequest) {
         const tienNuoc = soNuoc * (hopDong.giaNuoc || 0);
         const phiDichVu = Array.isArray(hopDong.phiDichVu) ? hopDong.phiDichVu : [];
         const tongTienDichVu = phiDichVu.reduce((sum: number, dv: any) => sum + (dv.gia || 0), 0);
-        const tongTien = (hopDong.giaThue || 0) + tienDien + tienNuoc + tongTienDichVu;
+        
+        // Get tienPhong from phong.giaThue instead of hopDong.giaThue
+        const phong = allPhong.find((p: any) => String(p._id) === String(phongId));
+        const tienPhong = phong?.giaThue || hopDong.giaThue || 0;
+        
+        const tongTien = tienPhong + tienDien + tienNuoc + tongTienDichVu;
 
         // Generate invoice number
         const phong = allPhong.find((p: any) => String(p._id) === String(phongId));
@@ -169,7 +174,7 @@ export async function POST(request: NextRequest) {
           khachThue: nguoiDaiDien?._id || hopDong.nguoiDaiDien,
           thang: thang,
           nam: nam,
-          tienPhong: hopDong.giaThue || 0,
+          tienPhong: tienPhong,
           tienDien: tienDien,
           soDien: soDien,
           chiSoDienBanDau: chiSoDienBanDau,
