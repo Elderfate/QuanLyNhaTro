@@ -241,19 +241,15 @@ export default function ThemMoiHoaDonPage() {
     return phiDichVuArray.map(p => `${p.ten}-${p.gia}`).join(',');
   }, [formData.phiDichVu]);
   
-  // Calculate total only when specific values change, avoid infinite loop
+  // Calculate total immediately when values change (no debounce for better UX)
   useEffect(() => {
     // Use a flag to prevent multiple rapid updates
     if (isInitializingRef.current) {
       return;
     }
     
-    // Debounce calculation to prevent infinite loops
-    const timeoutId = setTimeout(() => {
-      calculateTotal();
-    }, 50);
-    
-    return () => clearTimeout(timeoutId);
+    // Calculate immediately for better responsiveness
+    calculateTotal();
   }, [
     formData.tienPhong, 
     formData.chiSoDienBanDau, 
@@ -264,8 +260,6 @@ export default function ThemMoiHoaDonPage() {
     formData.daThanhToan, 
     formData.hopDong
   ]);
-  
-  // Remove calculateTotal from dependencies to prevent loop
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -423,69 +417,124 @@ export default function ThemMoiHoaDonPage() {
                   
                   <div className="space-y-1">
                     <Label htmlFor="hopDong" className="text-xs md:text-sm">Hợp đồng *</Label>
-                    <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded mb-1">
-                      {hopDongList.filter(hd => hd.trangThai === 'hoatDong').length} hợp đồng hoạt động
-                    </div>
                     <Select value={formData.hopDong} onValueChange={(value) => setFormData(prev => ({ ...prev, hopDong: value }))}>
-                      <SelectTrigger className="h-10 text-sm">
-                        <SelectValue placeholder="Chọn hợp đồng" />
-                      </SelectTrigger>
-                      <SelectContent className="max-w-[500px]">
-                        {hopDongList.length === 0 ? (
-                          <div className="p-2 text-sm text-gray-500">Đang tải hợp đồng...</div>
+                      <SelectTrigger className="h-auto min-h-[60px] text-sm">
+                        {formData.hopDong ? (
+                          (() => {
+                            const selectedHopDong = hopDongList.find(hd => hd._id === formData.hopDong);
+                            if (!selectedHopDong) return <SelectValue placeholder="Chọn hợp đồng" />;
+                            
+                            const phongObj = typeof selectedHopDong.phong === 'object' ? (selectedHopDong.phong as Phong) : null;
+                            const phongName = phongObj?.maPhong || getPhongName(selectedHopDong.phong as string, phongList);
+                            const nguoiDaiDienName = getKhachThueName(selectedHopDong.nguoiDaiDien, khachThueList);
+                            
+                            const formatDate = (date: any) => {
+                              try {
+                                if (!date) return 'N/A';
+                                const dateObj = new Date(date);
+                                if (isNaN(dateObj.getTime())) return 'N/A';
+                                return dateObj.toLocaleDateString('vi-VN');
+                              } catch (error) {
+                                return 'N/A';
+                              }
+                            };
+                            
+                            const ngayBatDau = formatDate(selectedHopDong.ngayBatDau);
+                            const ngayKetThuc = formatDate(selectedHopDong.ngayKetThuc);
+                            
+                            return (
+                              <div className="flex flex-col gap-1 text-left w-full py-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-blue-700">{selectedHopDong.maHopDong}</span>
+                                  <span className="text-gray-400">•</span>
+                                  <span className="text-sm font-medium">Phòng {phongName}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-gray-600">
+                                  <span>{nguoiDaiDienName}</span>
+                                  {ngayBatDau !== 'N/A' && ngayKetThuc !== 'N/A' && (
+                                    <>
+                                      <span className="text-gray-400">•</span>
+                                      <span>{ngayBatDau} → {ngayKetThuc}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()
                         ) : (
-                          hopDongList
-                            .filter(hd => hd.trangThai === 'hoatDong')
-                            .map((hopDong) => {
-                              const phongObj = typeof hopDong.phong === 'object' ? (hopDong.phong as Phong) : null;
-                              const phongName = phongObj?.maPhong || getPhongName(hopDong.phong as string, phongList);
-                              const toaNhaName = phongObj?.toaNha && typeof phongObj.toaNha === 'object' 
-                                ? (phongObj.toaNha as any).tenToaNha 
-                                : 'N/A';
-                              const nguoiDaiDienName = getKhachThueName(hopDong.nguoiDaiDien, khachThueList);
-                              
-                              // Xử lý ngày tháng an toàn
-                              const formatDate = (date: any) => {
-                                try {
-                                  if (!date) return 'N/A';
-                                  const dateObj = new Date(date);
-                                  if (isNaN(dateObj.getTime())) return 'N/A';
-                                  return dateObj.toLocaleDateString('vi-VN');
-                                } catch (error) {
-                                  return 'N/A';
-                                }
-                              };
-                              
-                              const ngayBatDau = formatDate(hopDong.ngayBatDau);
-                              const ngayKetThuc = formatDate(hopDong.ngayKetThuc);
-                              
-                              return (
-                                <SelectItem 
-                                  key={hopDong._id} 
-                                  value={hopDong._id!}
-                                  className="cursor-pointer"
-                                >
-                                  <div className="flex flex-col gap-1 py-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-semibold text-blue-700">{hopDong.maHopDong}</span>
-                                      <span className="text-gray-400">•</span>
-                                      <span className="text-sm font-medium text-gray-700">Phòng {phongName}</span>
-                                      {toaNhaName !== 'N/A' && (
-                                        <>
-                                          <span className="text-gray-400">•</span>
-                                          <span className="text-sm text-gray-600">{toaNhaName}</span>
-                                        </>
-                                      )}
+                          <SelectValue placeholder="Chọn hợp đồng" />
+                        )}
+                      </SelectTrigger>
+                      <SelectContent className="max-w-[600px]">
+                        {hopDongList.length === 0 ? (
+                          <div className="p-4 text-sm text-gray-500 text-center">Đang tải hợp đồng...</div>
+                        ) : (
+                          <>
+                            <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b">
+                              {hopDongList.filter(hd => hd.trangThai === 'hoatDong').length} hợp đồng hoạt động
+                            </div>
+                            {hopDongList
+                              .filter(hd => hd.trangThai === 'hoatDong')
+                              .map((hopDong) => {
+                                const phongObj = typeof hopDong.phong === 'object' ? (hopDong.phong as Phong) : null;
+                                const phongName = phongObj?.maPhong || getPhongName(hopDong.phong as string, phongList);
+                                const toaNhaName = phongObj?.toaNha && typeof phongObj.toaNha === 'object' 
+                                  ? (phongObj.toaNha as any).tenToaNha 
+                                  : 'N/A';
+                                const nguoiDaiDienName = getKhachThueName(hopDong.nguoiDaiDien, khachThueList);
+                                
+                                const formatDate = (date: any) => {
+                                  try {
+                                    if (!date) return 'N/A';
+                                    const dateObj = new Date(date);
+                                    if (isNaN(dateObj.getTime())) return 'N/A';
+                                    return dateObj.toLocaleDateString('vi-VN');
+                                  } catch (error) {
+                                    return 'N/A';
+                                  }
+                                };
+                                
+                                const ngayBatDau = formatDate(hopDong.ngayBatDau);
+                                const ngayKetThuc = formatDate(hopDong.ngayKetThuc);
+                                
+                                return (
+                                  <SelectItem 
+                                    key={hopDong._id} 
+                                    value={hopDong._id!}
+                                    className="cursor-pointer py-3"
+                                  >
+                                    <div className="flex flex-col gap-2 w-full">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-blue-700 text-base">{hopDong.maHopDong}</span>
+                                        <span className="text-gray-300">•</span>
+                                        <span className="text-sm font-medium text-gray-800">Phòng {phongName}</span>
+                                        {toaNhaName !== 'N/A' && (
+                                          <>
+                                            <span className="text-gray-300">•</span>
+                                            <span className="text-xs text-gray-600">{toaNhaName}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                                        <span className="flex items-center gap-1">
+                                          <span>👤</span>
+                                          <span className="font-medium">{nguoiDaiDienName}</span>
+                                        </span>
+                                        {ngayBatDau !== 'N/A' && ngayKetThuc !== 'N/A' && (
+                                          <>
+                                            <span className="text-gray-300">•</span>
+                                            <span className="flex items-center gap-1">
+                                              <span>📅</span>
+                                              <span>{ngayBatDau} → {ngayKetThuc}</span>
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                                      <span>👤 {nguoiDaiDienName}</span>
-                                      <span className="text-gray-400">•</span>
-                                      <span>📅 {ngayBatDau !== 'N/A' && ngayKetThuc !== 'N/A' ? `${ngayBatDau} → ${ngayKetThuc}` : 'Chưa có thông tin ngày'}</span>
-                                    </div>
-                                  </div>
-                                </SelectItem>
-                              );
-                            })
+                                  </SelectItem>
+                                );
+                              })}
+                          </>
                         )}
                       </SelectContent>
                     </Select>
@@ -563,7 +612,10 @@ export default function ThemMoiHoaDonPage() {
                       type="number"
                       min="0"
                       value={formData.tienPhong}
-                      onChange={(e) => setFormData(prev => ({ ...prev, tienPhong: parseInt(e.target.value) || 0 }))}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, tienPhong: parseInt(e.target.value) || 0 }));
+                        setTimeout(() => calculateTotal(), 0);
+                      }}
                       required
                       className="h-10"
                     />
@@ -576,7 +628,10 @@ export default function ThemMoiHoaDonPage() {
                       type="number"
                       min="0"
                       value={formData.daThanhToan}
-                      onChange={(e) => setFormData(prev => ({ ...prev, daThanhToan: parseInt(e.target.value) || 0 }))}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, daThanhToan: parseInt(e.target.value) || 0 }));
+                        setTimeout(() => calculateTotal(), 0);
+                      }}
                       required
                       className="h-10"
                     />
@@ -649,8 +704,10 @@ export default function ThemMoiHoaDonPage() {
                             onChange={(e) => {
                               const value = Math.max(0, parseInt(e.target.value) || 0);
                               // Đảm bảo chỉ số cuối >= chỉ số đầu
-                              const finalValue = Math.max(value, formData.chiSoDienBanDau);
+                              const finalValue = Math.max(value, formData.chiSoDienBanDau || 0);
                               setFormData(prev => ({ ...prev, chiSoDienCuoiKy: finalValue }));
+                              // Trigger calculation immediately
+                              setTimeout(() => calculateTotal(), 0);
                             }}
                             className="h-8 w-20 text-center"
                             placeholder="0"
@@ -708,13 +765,15 @@ export default function ThemMoiHoaDonPage() {
                               const value = Math.max(0, parseInt(e.target.value) || 0);
                               setFormData(prev => {
                                 // Nếu chỉ số ban đầu > chỉ số cuối kỳ, cập nhật chỉ số cuối kỳ
-                                const newChiSoCuoiKy = Math.max(prev.chiSoNuocCuoiKy, value);
+                                const newChiSoCuoiKy = Math.max(prev.chiSoNuocCuoiKy || 0, value);
                                 return { 
                                   ...prev, 
                                   chiSoNuocBanDau: value,
                                   chiSoNuocCuoiKy: newChiSoCuoiKy
                                 };
                               });
+                              // Trigger calculation immediately
+                              setTimeout(() => calculateTotal(), 0);
                             }}
                             className="h-8 w-20 text-center"
                             placeholder="0"
@@ -729,8 +788,10 @@ export default function ThemMoiHoaDonPage() {
                             onChange={(e) => {
                               const value = Math.max(0, parseInt(e.target.value) || 0);
                               // Đảm bảo chỉ số cuối >= chỉ số đầu
-                              const finalValue = Math.max(value, formData.chiSoNuocBanDau);
+                              const finalValue = Math.max(value, formData.chiSoNuocBanDau || 0);
                               setFormData(prev => ({ ...prev, chiSoNuocCuoiKy: finalValue }));
+                              // Trigger calculation immediately
+                              setTimeout(() => calculateTotal(), 0);
                             }}
                             className="h-8 w-20 text-center"
                             placeholder="0"
