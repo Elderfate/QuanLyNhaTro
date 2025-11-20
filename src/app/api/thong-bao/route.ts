@@ -1,7 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { ThongBaoGS, NguoiDungGS, PhongGS, ToaNhaGS } from '@/lib/googlesheets-models';
+import { ThongBaoGS } from '@/lib/googlesheets-models';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { normalizeId } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
 import { z } from 'zod';
 
 const thongBaoSchema = z.object({
@@ -18,47 +28,47 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = thongBaoSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = thongBaoSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
-    const newThongBao = await ThongBaoGS.create({
+    const nguoiGuiId = session.user?.id;
+    if (!nguoiGuiId) {
+      return unauthorizedResponse();
+    }
+
+    const normalizedPhongIds = validatedData.phong 
+      ? validatedData.phong.map(id => normalizeId(id)).filter((id): id is string => id !== null)
+      : [];
+    const normalizedToaNhaId = validatedData.toaNha ? normalizeId(validatedData.toaNha) : null;
+
+    const newThongBao = await withRetry(() => ThongBaoGS.create({
       _id: `thongbao_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       ...validatedData,
-      nguoiGui: session.user.id,
+      nguoiGui: nguoiGuiId,
       loai: validatedData.loai || 'chung',
-      phong: validatedData.phong || [],
-      toaNha: validatedData.toaNha || '',
+      phong: normalizedPhongIds,
+      toaNha: normalizedToaNhaId || '',
       daDoc: [],
       ngayGui: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }));
 
-    return NextResponse.json({
-      success: true,
-      data: newThongBao,
-      message: 'Thông báo đã được gửi thành công',
-    }, { status: 201 });
+    return successResponse(newThongBao, 'Thông báo đã được gửi thành công', 201);
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating thong bao:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi tạo thông báo');
   }
 }
 
@@ -67,59 +77,48 @@ export async function PUT(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json(
-        { message: 'ID thông báo là bắt buộc' },
-        { status: 400 }
-      );
+      return badRequestResponse('ID thông báo là bắt buộc');
     }
 
     const body = await request.json();
-    const validatedData = thongBaoSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = thongBaoSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
-    const updatedThongBao = await ThongBaoGS.findByIdAndUpdate(id, {
+    const normalizedPhongIds = validatedData.phong 
+      ? validatedData.phong.map(id => normalizeId(id)).filter((id): id is string => id !== null)
+      : [];
+    const normalizedToaNhaId = validatedData.toaNha ? normalizeId(validatedData.toaNha) : null;
+
+    const updatedThongBao = await withRetry(() => ThongBaoGS.findByIdAndUpdate(id, {
       ...validatedData,
       loai: validatedData.loai || 'chung',
-      phong: validatedData.phong || [],
-      toaNha: validatedData.toaNha || '',
+      phong: normalizedPhongIds,
+      toaNha: normalizedToaNhaId || '',
       updatedAt: new Date().toISOString(),
-    });
+    }));
 
     if (!updatedThongBao) {
-      return NextResponse.json(
-        { message: 'Không tìm thấy thông báo' },
-        { status: 404 }
-      );
+      return notFoundResponse('Không tìm thấy thông báo');
     }
 
-    return NextResponse.json({
-      success: true,
-      data: updatedThongBao,
-      message: 'Cập nhật thông báo thành công',
-    });
+    return successResponse(updatedThongBao, 'Cập nhật thông báo thành công');
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating thong bao:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật thông báo');
   }
 }
 
@@ -128,41 +127,25 @@ export async function DELETE(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json(
-        { message: 'ID thông báo là bắt buộc' },
-        { status: 400 }
-      );
+      return badRequestResponse('ID thông báo là bắt buộc');
     }
 
-    const deletedThongBao = await ThongBaoGS.findByIdAndDelete(id);
+    const deletedThongBao = await withRetry(() => ThongBaoGS.findByIdAndDelete(id));
 
     if (!deletedThongBao) {
-      return NextResponse.json(
-        { message: 'Không tìm thấy thông báo' },
-        { status: 404 }
-      );
+      return notFoundResponse('Không tìm thấy thông báo');
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Xóa thông báo thành công',
-    });
+    return successResponse(null, 'Xóa thông báo thành công');
 
   } catch (error) {
-    console.error('Error deleting thong bao:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa thông báo');
   }
 }

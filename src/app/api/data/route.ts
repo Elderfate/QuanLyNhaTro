@@ -535,7 +535,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    // Load ALL data in parallel
+    // Load ALL data in parallel with retry logic
     const [
       allToaNha,
       allPhong,
@@ -547,15 +547,15 @@ export async function GET(request: NextRequest) {
       allThongBao,
       allUsers,
     ] = await Promise.all([
-      ToaNhaGS.find(),
-      PhongGS.find(),
-      KhachThueGS.find(),
-      HopDongGS.find(),
-      HoaDonGS.find(),
-      ThanhToanGS.find(),
-      SuCoGS.find(),
-      ThongBaoGS.find(),
-      NguoiDungGS.find(),
+      withRetry(() => ToaNhaGS.find()),
+      withRetry(() => PhongGS.find()),
+      withRetry(() => KhachThueGS.find()),
+      withRetry(() => HopDongGS.find()),
+      withRetry(() => HoaDonGS.find()),
+      withRetry(() => ThanhToanGS.find()),
+      withRetry(() => SuCoGS.find()),
+      withRetry(() => ThongBaoGS.find()),
+      withRetry(() => NguoiDungGS.find()),
     ]);
 
     // Calculate stats

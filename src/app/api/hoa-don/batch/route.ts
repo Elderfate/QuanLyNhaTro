@@ -1,69 +1,50 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { HopDongGS, HoaDonGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
+import { HopDongGS, HoaDonGS, PhongGS, KhachThueGS, ChiSoDienNuocGS } from '@/lib/googlesheets-models';
+import {
+  successResponse,
+  unauthorizedResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { normalizeId, compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
+import type { HoaDonDocument, HopDongDocument, PhongDocument } from '@/lib/api-types';
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
     const { thang, nam, phongIds } = body;
 
     if (!thang || !nam || !Array.isArray(phongIds) || phongIds.length === 0) {
-      return NextResponse.json(
-        { message: 'Tháng, năm và danh sách phòng là bắt buộc' },
-        { status: 400 }
-      );
+      return badRequestResponse('Tháng, năm và danh sách phòng là bắt buộc');
     }
 
-    // Get all contracts and invoices with retry logic for 429 errors
-    let allHopDong, allHoaDon, allPhong, allKhachThue;
-    let retries = 0;
-    const maxRetries = 3;
-    
-    // Helper function to retry on 429
-    const retryFetch = async (fn: () => Promise<any>, name: string) => {
-      retries = 0;
-      while (retries < maxRetries) {
-        try {
-          return await fn();
-        } catch (error: any) {
-          if (error.response?.status === 429 && retries < maxRetries - 1) {
-            const waitTime = (retries + 1) * 2000;
-            console.log(`API 429 error fetching ${name}, retrying in ${waitTime}ms... (attempt ${retries + 1}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            retries++;
-          } else {
-            throw error;
-          }
-        }
-      }
-    };
+    // Get all contracts and invoices with retry logic
+    let allHopDong: HopDongDocument[] = [];
+    let allHoaDon: HoaDonDocument[] = [];
+    let allPhong: PhongDocument[] = [];
+    let allKhachThue: unknown[] = [];
     
     try {
-      allHopDong = await retryFetch(() => HopDongGS.find(), 'contracts');
-      allHoaDon = await retryFetch(() => HoaDonGS.find(), 'invoices');
-      allPhong = await retryFetch(() => PhongGS.find(), 'rooms');
-      allKhachThue = await retryFetch(() => KhachThueGS.find(), 'tenants');
-    } catch (error: any) {
+      [allHopDong, allHoaDon, allPhong, allKhachThue] = await Promise.all([
+        withRetry(() => HopDongGS.find()) as Promise<HopDongDocument[]>,
+        withRetry(() => HoaDonGS.find()) as Promise<HoaDonDocument[]>,
+        withRetry(() => PhongGS.find()) as Promise<PhongDocument[]>,
+        withRetry(() => KhachThueGS.find()),
+      ]);
+    } catch (error) {
       console.error('Error fetching data for batch invoice creation:', error);
-      return NextResponse.json(
-        { 
-          success: false,
-          message: error.response?.status === 429 
-            ? 'Quá nhiều yêu cầu. Vui lòng thử lại sau vài giây.'
-            : 'Lỗi khi tải dữ liệu từ hệ thống',
-          data: { created: 0, total: 0, results: [], errors: [] }
-        },
-        { status: error.response?.status || 500 }
+      return serverErrorResponse(
+        error,
+        'Lỗi khi tải dữ liệu từ hệ thống'
       );
     }
 
@@ -74,19 +55,22 @@ export async function POST(request: NextRequest) {
       try {
         // Find active contract for this room
         const now = new Date();
-        const hopDong = allHopDong.find((hd: any) => {
+        const normalizedPhongId = normalizeId(phongId);
+        if (!normalizedPhongId) {
+          errors.push(`Phòng ${phongId} có ID không hợp lệ`);
+          continue;
+        }
+        
+        const hopDong = allHopDong.find((hd) => {
+          if (hd.trangThai !== 'hoatDong') return false;
+          
           const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
           const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-          // Normalize phong ID
-          let phongIdFromHd = hd.phong;
-          if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
-            phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
-          }
-          return String(phongIdFromHd) === String(phongId) &&
-                 hd.trangThai === 'hoatDong' &&
-                 ngayBatDau && ngayBatDau <= now &&
-                 ngayKetThuc && ngayKetThuc >= now;
-        });
+          if (!ngayBatDau || !ngayKetThuc) return false;
+          if (ngayBatDau > now || ngayKetThuc < now) return false;
+          
+          return compareIds(hd.phong, normalizedPhongId);
+        }) as HopDongDocument | undefined;
 
         if (!hopDong) {
           errors.push(`Phòng ${phongId} không có hợp đồng đang hoạt động`);
@@ -94,9 +78,10 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if invoice already exists
-        const existingInvoice = allHoaDon.find((hd: any) => {
-          const hopDongId = typeof hd.hopDong === 'object' ? hd.hopDong._id : hd.hopDong;
-          return String(hopDongId) === String(hopDong._id) &&
+        const hopDongId = normalizeId(hopDong._id);
+        const existingInvoice = allHoaDon.find((hd) => {
+          const hdHopDongId = normalizeId(hd.hopDong);
+          return compareIds(hdHopDongId, hopDongId) &&
                  hd.thang === thang &&
                  hd.nam === nam;
         });
@@ -108,12 +93,12 @@ export async function POST(request: NextRequest) {
 
         // Get latest invoice for this contract to get previous readings
         const invoicesForContract = allHoaDon
-          .filter((hd: any) => {
-            const hopDongId = typeof hd.hopDong === 'object' ? hd.hopDong._id : hd.hopDong;
-            return String(hopDongId) === String(hopDong._id);
+          .filter((hd) => {
+            const hdHopDongId = normalizeId(hd.hopDong);
+            return compareIds(hdHopDongId, hopDongId);
           })
-          .sort((a: any, b: any) => {
-            if (a.nam !== b.nam) return b.nam - a.nam;
+          .sort((a, b) => {
+            if (b.nam !== a.nam) return b.nam - a.nam;
             return b.thang - a.thang;
           });
 
@@ -142,7 +127,7 @@ export async function POST(request: NextRequest) {
         const tongTienDichVu = phiDichVu.reduce((sum: number, dv: any) => sum + (dv.gia || 0), 0);
         
         // Get tienPhong from phong.giaThue instead of hopDong.giaThue
-        const phong = allPhong.find((p: any) => String(p._id) === String(phongId));
+        const phong = allPhong.find((p) => compareIds(p._id, normalizedPhongId)) as PhongDocument | undefined;
         const tienPhong = phong?.giaThue || hopDong.giaThue || 0;
         const maPhong = phong?.maPhong || 'XXX';
         
@@ -159,18 +144,18 @@ export async function POST(request: NextRequest) {
         }
 
         // Create invoice
-        const nguoiDaiDien = hopDong.nguoiDaiDien 
-          ? allKhachThue.find((kt: any) => String(kt._id) === String(hopDong.nguoiDaiDien))
+        const nguoiDaiDienId = normalizeId(hopDong.nguoiDaiDien);
+        const nguoiDaiDien = nguoiDaiDienId 
+          ? allKhachThue.find((kt) => compareIds((kt as { _id: string })._id, nguoiDaiDienId))
           : null;
 
         // Reduce fields to avoid "Sheet is not large enough" error (max 30 columns)
-        // Reduce fields to avoid "Sheet is not large enough" error (max 30 columns)
-        const hoaDonData = {
+        const hoaDonData: Partial<HoaDonDocument> = {
           _id: `hoadon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           maHoaDon: invoiceNumber,
-          hopDong: hopDong._id,
-          phong: phongId,
-          khachThue: nguoiDaiDien?._id || hopDong.nguoiDaiDien,
+          hopDong: hopDongId || '',
+          phong: normalizedPhongId,
+          khachThue: nguoiDaiDienId || (nguoiDaiDien as { _id?: string })?._id || '',
           thang: thang,
           nam: nam,
           tienPhong: tienPhong,
@@ -194,9 +179,9 @@ export async function POST(request: NextRequest) {
           updatedAt: new Date().toISOString(),
         };
 
-        await HoaDonGS.create(hoaDonData);
+        await withRetry(() => HoaDonGS.create(hoaDonData));
         results.push({
-          phongId,
+          phongId: normalizedPhongId,
           maPhong: maPhong,
           maHoaDon: invoiceNumber,
           tongTien: tongTien,
@@ -208,23 +193,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        created: results.length,
-        total: phongIds.length,
-        results,
-        errors,
-      },
-      message: `Đã tạo ${results.length}/${phongIds.length} hóa đơn thành công`,
-    });
+    return successResponse({
+      created: results.length,
+      total: phongIds.length,
+      results,
+      errors,
+    }, `Đã tạo ${results.length}/${phongIds.length} hóa đơn thành công`);
 
   } catch (error) {
-    console.error('Error in batch invoice creation:', error);
-    return NextResponse.json(
-      { message: 'Lỗi khi tạo hóa đơn hàng loạt' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi tạo hóa đơn hàng loạt');
   }
 }
 
