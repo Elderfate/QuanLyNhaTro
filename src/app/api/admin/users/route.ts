@@ -14,9 +14,14 @@ export async function GET() {
 
     const users = await NguoiDungGS.find();
     
+    // Filter out tenants (khachThue) - only return admins, landlords (chuNha), and staff (nhanVien)
+    const filteredUsers = users.filter((user: any) => {
+      const vaiTro = user.vaiTro || user.role || '';
+      return vaiTro !== 'khachThue' && vaiTro !== 'tenant';
+    });
+    
     // Remove password fields and sort by createdAt
-    // Return ALL users (including inactive ones) - let frontend filter if needed
-    const usersWithoutPassword = users
+    const usersWithoutPassword = filteredUsers
       .map((user: any) => {
         const { password, matKhau, ...userWithoutPassword } = user;
         return userWithoutPassword;
@@ -29,6 +34,7 @@ export async function GET() {
     
     // Log for debugging
     console.log(`[Users API] Total users found: ${users.length}`);
+    console.log(`[Users API] Filtered users (excluding tenants): ${filteredUsers.length}`);
     console.log(`[Users API] Returning ${usersWithoutPassword.length} users (after password removal)`);
     console.log(`[Users API] Admin users:`, usersWithoutPassword.filter((u: any) => 
       u.role === 'admin' || u.vaiTro === 'admin'

@@ -37,7 +37,6 @@ import {
   ChevronsRight,
   CircleCheck,
   AlertCircle,
-  Camera,
   Copy,
   Search,
   Image as ImageIcon,
@@ -165,7 +164,6 @@ type HoaDonTableProps = {
   onEdit: (hoaDon: HoaDon) => void
   onDelete: (id: string) => void
   onDownload: (hoaDon: HoaDon) => void
-  onScreenshot: (hoaDon: HoaDon) => void
   onShare: (hoaDon: HoaDon) => void
   onPayment: (hoaDon: HoaDon) => void
   onDeleteMultiple?: (ids: string[]) => void
@@ -365,10 +363,6 @@ const createColumns = (props: HoaDonTableProps): ColumnDef<HoaDon>[] => [
           <DropdownMenuItem onClick={() => props.onShare(row.original)}>
             <Copy className="mr-2 h-4 w-4" />
             Sao chép link
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => props.onScreenshot(row.original)}>
-            <Camera className="mr-2 h-4 w-4" />
-            Xuất PDF
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => props.onDownload(row.original)}>
             <Download className="mr-2 h-4 w-4" />

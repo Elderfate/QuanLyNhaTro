@@ -475,7 +475,7 @@ export const useUpdateHoaDonMutation = () => {
 export const useDeleteHoaDonMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/api/hoa-don/${id}`),
+    mutationFn: (id: string) => apiClient.delete(`/api/hoa-don?id=${id}`),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.hoaDon });
       

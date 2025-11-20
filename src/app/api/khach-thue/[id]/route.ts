@@ -164,7 +164,7 @@ export async function PUT(
       delete updateData.password;
     }
 
-    const khachThue = await KhachThueGS.findByIdAndUpdate(id, updateData);
+    const khachThue = await KhachThueGS.findByIdAndUpdate(id, updateData, { new: true });
 
     if (!khachThue) {
       return NextResponse.json(
@@ -173,9 +173,15 @@ export async function PUT(
       );
     }
 
+    // Ensure anhCCCD is included in response
+    const responseData = {
+      ...khachThue,
+      anhCCCD: khachThue.anhCCCD || { matTruoc: '', matSau: '' }
+    };
+
     return NextResponse.json({
       success: true,
-      data: khachThue,
+      data: responseData,
       message: 'Khách thuê đã được cập nhật thành công',
     });
 

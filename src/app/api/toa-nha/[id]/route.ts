@@ -122,11 +122,12 @@ export async function PUT(
 
     const updatedToaNha = await ToaNhaGS.findByIdAndUpdate(id, {
       ...validatedData,
+      diaChi: validatedData.diaChi, // Ensure diaChi is included
       anhToaNha: newImageUrls,
       tienNghiChung: validatedData.tienNghiChung || [],
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
-    });
+    }, { new: true }); // Return updated document
 
     // Populate chuSoHuu
     if (updatedToaNha && updatedToaNha.chuSoHuu) {

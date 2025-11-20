@@ -17,6 +17,7 @@ import {
   Save,
   Monitor
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function CaiDatPage() {
   const [fontSettings, setFontSettings] = useState({
@@ -54,8 +55,9 @@ export default function CaiDatPage() {
 
   const applyFontSettings = () => {
     // Áp dụng font family cho toàn bộ document
-    document.documentElement.style.setProperty('--font-family', fontSettings.fontFamily);
-    document.body.style.fontFamily = fontSettings.fontFamily;
+    const fontFamilyValue = fontSettings.fontFamily;
+    document.documentElement.style.setProperty('--font-family', fontFamilyValue);
+    document.body.style.fontFamily = fontFamilyValue;
     
     // Áp dụng font size
     const fontSizeMap: Record<string, string> = {
@@ -64,8 +66,9 @@ export default function CaiDatPage() {
       'large': '18px',
       'extra-large': '20px'
     };
-    document.documentElement.style.setProperty('--font-size-base', fontSizeMap[fontSettings.fontSize]);
-    document.body.style.fontSize = fontSizeMap[fontSettings.fontSize];
+    const fontSizeValue = fontSizeMap[fontSettings.fontSize];
+    document.documentElement.style.setProperty('--font-size-base', fontSizeValue);
+    document.body.style.fontSize = fontSizeValue;
     
     // Áp dụng line height
     const lineHeightMap: Record<string, string> = {
@@ -74,8 +77,9 @@ export default function CaiDatPage() {
       'relaxed': '1.75',
       'loose': '2'
     };
-    document.documentElement.style.setProperty('--line-height-base', lineHeightMap[fontSettings.lineHeight]);
-    document.body.style.lineHeight = lineHeightMap[fontSettings.lineHeight];
+    const lineHeightValue = lineHeightMap[fontSettings.lineHeight];
+    document.documentElement.style.setProperty('--line-height-base', lineHeightValue);
+    document.body.style.lineHeight = lineHeightValue;
     
     // Áp dụng font weight
     const fontWeightMap: Record<string, string> = {
@@ -85,19 +89,16 @@ export default function CaiDatPage() {
       'semibold': '600',
       'bold': '700'
     };
-    document.documentElement.style.setProperty('--font-weight-base', fontWeightMap[fontSettings.fontWeight]);
+    const fontWeightValue = fontWeightMap[fontSettings.fontWeight];
+    document.documentElement.style.setProperty('--font-weight-base', fontWeightValue);
+    document.body.style.fontWeight = fontWeightValue;
     
-    // Áp dụng cho tất cả các elements
-    const allElements = document.querySelectorAll('*');
-    allElements.forEach(el => {
-      const element = el as HTMLElement;
-      if (!element.style.fontFamily) {
-        element.style.fontFamily = fontSettings.fontFamily;
-      }
-      if (!element.style.lineHeight) {
-        element.style.lineHeight = lineHeightMap[fontSettings.lineHeight];
-      }
-    });
+    // Save to localStorage immediately when settings change
+    try {
+      localStorage.setItem('fontSettings', JSON.stringify(fontSettings));
+    } catch (error) {
+      console.error('Error saving font settings to localStorage:', error);
+    }
   };
 
   const [uiSettings, setUiSettings] = useState({
@@ -152,9 +153,15 @@ export default function CaiDatPage() {
   };
 
   const handleSaveFontSettings = () => {
-    console.log('Saving font settings:', fontSettings);
-    localStorage.setItem('fontSettings', JSON.stringify(fontSettings));
-    alert('Đã lưu cài đặt font chữ thành công!');
+    try {
+      console.log('Saving font settings:', fontSettings);
+      localStorage.setItem('fontSettings', JSON.stringify(fontSettings));
+      applyFontSettings(); // Re-apply settings after saving
+      toast.success('Đã lưu cài đặt font chữ thành công!');
+    } catch (error) {
+      console.error('Error saving font settings:', error);
+      toast.error('Có lỗi xảy ra khi lưu cài đặt font chữ');
+    }
   };
 
   const handleThemeChange = (theme: string) => {

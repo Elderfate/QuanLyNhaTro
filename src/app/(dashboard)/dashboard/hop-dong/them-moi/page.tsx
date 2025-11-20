@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,39 +57,6 @@ export default function ThemMoiHopDongPage() {
         phong.trangThai === 'trong' || phong.trangThai === 'daDat'
       );
   
-  // Filter tenants by selected room (based on active contracts)
-  const getTenantsForRoom = (roomId: string): KhachThue[] => {
-    if (!roomId) return [];
-    
-    // Get active contracts for this room
-    const now = new Date();
-    const activeContracts = allHopDong.filter((hd: any) => {
-      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
-      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
-      return phongId === roomId &&
-             hd.trangThai === 'hoatDong' &&
-             ngayBatDau && ngayBatDau <= now &&
-             ngayKetThuc && ngayKetThuc >= now;
-    });
-    
-    // Extract tenant IDs from active contracts
-    const tenantIds = new Set<string>();
-    activeContracts.forEach((hd: any) => {
-      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [];
-      khachThueIds.forEach((id: string) => {
-        if (id) tenantIds.add(id);
-      });
-    });
-    
-    // Return tenants that are in active contracts for this room
-    return allKhachThue.filter((kt: KhachThue) => tenantIds.has(kt._id!));
-  };
-  
-  const khachThueList = formData.phong 
-    ? getTenantsForRoom(formData.phong)
-    : allKhachThue;
-  
   const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -144,6 +111,41 @@ export default function ThemMoiHopDongPage() {
   const [openPhong, setOpenPhong] = useState(false);
   const [openKhachThue, setOpenKhachThue] = useState(false);
   const [openNguoiDaiDien, setOpenNguoiDaiDien] = useState(false);
+
+  // Filter tenants by selected room (based on active contracts)
+  const getTenantsForRoom = (roomId: string): KhachThue[] => {
+    if (!roomId) return [];
+    
+    // Get active contracts for this room
+    const now = new Date();
+    const activeContracts = allHopDong.filter((hd: any) => {
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
+      return phongId === roomId &&
+             hd.trangThai === 'hoatDong' &&
+             ngayBatDau && ngayBatDau <= now &&
+             ngayKetThuc && ngayKetThuc >= now;
+    });
+    
+    // Extract tenant IDs from active contracts
+    const tenantIds = new Set<string>();
+    activeContracts.forEach((hd: any) => {
+      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [];
+      khachThueIds.forEach((id: string) => {
+        if (id) tenantIds.add(id);
+      });
+    });
+    
+    // Return tenants that are in active contracts for this room
+    return allKhachThue.filter((kt: KhachThue) => tenantIds.has(kt._id!));
+  };
+  
+  const khachThueList = useMemo(() => {
+    return formData.phong 
+      ? getTenantsForRoom(formData.phong)
+      : allKhachThue;
+  }, [formData.phong, allHopDong, allKhachThue]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', {

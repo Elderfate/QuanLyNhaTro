@@ -4,6 +4,59 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { PhiDichVu } from '@/types';
 
+// GET - Lấy hóa đơn theo ID
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { message: 'Thiếu ID hóa đơn' },
+        { status: 400 }
+      );
+    }
+
+    const hoaDon = await HoaDonGS.findById(id);
+    if (!hoaDon) {
+      return NextResponse.json(
+        { message: 'Hóa đơn không tồn tại' },
+        { status: 404 }
+      );
+    }
+
+    // Populate relationships
+    if (hoaDon.hopDong) {
+      const hopDong = await HopDongGS.findById(hoaDon.hopDong);
+      hoaDon.hopDong = hopDong;
+    }
+    if (hoaDon.phong) {
+      const phong = await PhongGS.findById(hoaDon.phong);
+      hoaDon.phong = phong;
+    }
+    if (hoaDon.khachThue) {
+      const khachThue = await KhachThueGS.findById(hoaDon.khachThue);
+      hoaDon.khachThue = khachThue;
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: hoaDon
+    });
+  } catch (error) {
+    console.error('Error fetching hoa don:', error);
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
 // POST - Tạo hóa đơn mới
 export async function POST(request: NextRequest) {
   try {
