@@ -1,9 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PhongGS, ToaNhaGS, HopDongGS } from '@/lib/googlesheets-models';
+import { PhongGS, ToaNhaGS } from '@/lib/googlesheets-models';
 import { updatePhongStatus } from '@/lib/status-utils';
 import { deleteCloudinaryImages } from '@/lib/cloudinary-utils';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+} from '@/lib/api-response';
+import { compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
+import type { PhongDocument } from '@/lib/api-types';
 import { z } from 'zod';
 
 const phongSchema = z.object({
@@ -28,10 +38,7 @@ export async function GET(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
@@ -39,17 +46,15 @@ export async function GET(
     // Cập nhật trạng thái phòng trước khi trả về
     await updatePhongStatus(id);
 
-    const phong = await PhongGS.findById(id);
+    const phong = await withRetry(() => PhongGS.findById(id)) as PhongDocument | null;
     if (!phong) {
-      return NextResponse.json(
-        { message: 'Phòng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Phòng không tồn tại');
     }
 
     // Populate toaNha
-    if (phong.toaNha) {
-      const toaNha = await ToaNhaGS.findById(phong.toaNha);
+    const toaNhaId = typeof phong.toaNha === 'string' ? phong.toaNha : phong.toaNha?._id;
+    if (toaNhaId) {
+      const toaNha = await withRetry(() => ToaNhaGS.findById(toaNhaId));
       phong.toaNha = toaNha ? {
         _id: toaNha._id,
         tenToaNha: toaNha.tenToaNha,
@@ -57,17 +62,10 @@ export async function GET(
       } : null;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: phong,
-    });
+    return successResponse(phong);
 
   } catch (error) {
-    console.error('Error fetching phong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi lấy thông tin phòng');
   }
 }
 
@@ -79,33 +77,32 @@ export async function PUT(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = phongSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = phongSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     const { id } = await params;
 
     // Get existing phong to check for deleted images
-    const existingPhong = await PhongGS.findById(id);
+    const existingPhong = await withRetry(() => PhongGS.findById(id)) as PhongDocument | null;
     if (!existingPhong) {
-      return NextResponse.json(
-        { message: 'Phòng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Phòng không tồn tại');
     }
 
     // Check if toa nha exists
-    const toaNha = await ToaNhaGS.findById(validatedData.toaNha);
+    const toaNha = await withRetry(() => ToaNhaGS.findById(validatedData.toaNha));
     if (!toaNha) {
-      return NextResponse.json(
-        { message: 'Tòa nhà không tồn tại' },
-        { status: 400 }
-      );
+      return errorResponse('Tòa nhà không tồn tại', 400, 'TOA_NHA_NOT_FOUND');
     }
 
     // Handle image deletion from Cloudinary if images were removed
@@ -124,7 +121,7 @@ export async function PUT(
     }
 
     // Nếu trangThai được cung cấp, dùng nó; ngược lại tự động tính toán
-    const updateData: any = {
+    const updateData: Partial<PhongDocument> = {
       ...validatedData,
       anhPhong: newImageUrls,
       tienNghi: validatedData.tienNghi || [],
@@ -141,21 +138,23 @@ export async function PUT(
     }
     // Nếu có trangThai trong request, dùng giá trị đó (override thủ công)
 
-    const phong = await PhongGS.findByIdAndUpdate(id, updateData);
+    const phong = await withRetry(() => PhongGS.findByIdAndUpdate(id, updateData));
 
     if (!phong) {
-      return NextResponse.json(
-        { message: 'Phòng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Phòng không tồn tại');
     }
 
     // Lấy lại dữ liệu với trạng thái đã cập nhật
-    const updatedPhong = await PhongGS.findById(id);
+    const updatedPhong = await withRetry(() => PhongGS.findById(id)) as PhongDocument | null;
+    
+    if (!updatedPhong) {
+      return notFoundResponse('Phòng không tồn tại');
+    }
     
     // Populate toaNha
-    if (updatedPhong && updatedPhong.toaNha) {
-      const toaNhaData = await ToaNhaGS.findById(updatedPhong.toaNha);
+    const toaNhaId = typeof updatedPhong.toaNha === 'string' ? updatedPhong.toaNha : updatedPhong.toaNha?._id;
+    if (toaNhaId) {
+      const toaNhaData = await withRetry(() => ToaNhaGS.findById(toaNhaId));
       updatedPhong.toaNha = toaNhaData ? {
         _id: toaNhaData._id,
         tenToaNha: toaNhaData.tenToaNha,
@@ -163,25 +162,10 @@ export async function PUT(
       } : null;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: updatedPhong,
-      message: 'Phòng đã được cập nhật thành công',
-    });
+    return successResponse(updatedPhong, 'Phòng đã được cập nhật thành công');
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating phong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật phòng');
   }
 }
 
@@ -193,20 +177,14 @@ export async function DELETE(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
 
-    const phong = await PhongGS.findById(id);
+    const phong = await withRetry(() => PhongGS.findById(id)) as PhongDocument | null;
     if (!phong) {
-      return NextResponse.json(
-        { message: 'Phòng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Phòng không tồn tại');
     }
 
     // Delete images from Cloudinary before deleting the record
@@ -221,18 +199,11 @@ export async function DELETE(
       }
     }
 
-    await PhongGS.findByIdAndDelete(id);
+    await withRetry(() => PhongGS.findByIdAndDelete(id));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Phòng đã được xóa thành công',
-    });
+    return successResponse(null, 'Phòng đã được xóa thành công');
 
   } catch (error) {
-    console.error('Error deleting phong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa phòng');
   }
 }

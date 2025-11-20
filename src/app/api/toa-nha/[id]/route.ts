@@ -1,8 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { ToaNhaGS, PhongGS, NguoiDungGS } from '@/lib/googlesheets-models';
 import { deleteCloudinaryImages } from '@/lib/cloudinary-utils';
+import {
+  successResponse,
+  errorResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  forbiddenResponse,
+} from '@/lib/api-response';
+import { compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
+import type { ToaNhaDocument } from '@/lib/api-types';
 import { z } from 'zod';
 
 const toaNhaSchema = z.object({
@@ -26,47 +38,34 @@ export async function GET(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
 
-    const toaNha = await ToaNhaGS.findById(id);
+    const toaNha = await withRetry(() => ToaNhaGS.findById(id)) as ToaNhaDocument | null;
     if (!toaNha) {
-      return NextResponse.json(
-        { message: 'Tòa nhà không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Tòa nhà không tồn tại');
     }
 
     // Populate chuSoHuu
     if (toaNha.chuSoHuu) {
-      const chuSoHuu = await NguoiDungGS.findById(toaNha.chuSoHuu);
+      const chuSoHuu = await withRetry(() => NguoiDungGS.findById(toaNha.chuSoHuu as string));
       toaNha.chuSoHuu = chuSoHuu ? { _id: chuSoHuu._id, ten: chuSoHuu.ten, email: chuSoHuu.email } : null;
     }
 
     // Tính tổng số phòng thực tế
-    const allPhong = await PhongGS.find();
-    const phongCount = allPhong.filter((p: any) => p.toaNha === id).length;
+    const allPhong = await withRetry(() => PhongGS.find());
+    const phongCount = allPhong.filter((p) => compareIds(p.toaNha, id)).length;
     const toaNhaWithPhongCount = {
       ...toaNha,
       tongSoPhong: phongCount
     };
 
-    return NextResponse.json({
-      success: true,
-      data: toaNhaWithPhongCount,
-    });
+    return successResponse(toaNhaWithPhongCount);
 
   } catch (error) {
-    console.error('Error fetching toa nha:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi lấy thông tin tòa nhà');
   }
 }
 
@@ -78,31 +77,32 @@ export async function PUT(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = toaNhaSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = toaNhaSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     const { id } = await params;
 
-    const toaNha = await ToaNhaGS.findById(id);
+    const toaNha = await withRetry(() => ToaNhaGS.findById(id)) as ToaNhaDocument | null;
     if (!toaNha) {
-      return NextResponse.json(
-        { message: 'Tòa nhà không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Tòa nhà không tồn tại');
     }
 
     // Check if user has permission to update this toa nha
-    if (toaNha.chuSoHuu !== session.user.id && session.user.role !== 'admin') {
-      return NextResponse.json(
-        { message: 'Bạn không có quyền chỉnh sửa tòa nhà này' },
-        { status: 403 }
-      );
+    const userId = session.user?.id || '';
+    const userRole = (session.user as { role?: string })?.role;
+    if (!compareIds(toaNha.chuSoHuu, userId) && userRole !== 'admin') {
+      return forbiddenResponse('Bạn không có quyền chỉnh sửa tòa nhà này');
     }
 
     // Handle image deletion from Cloudinary if images were removed
@@ -120,48 +120,39 @@ export async function PUT(
       }
     }
 
-    const updatedToaNha = await ToaNhaGS.findByIdAndUpdate(id, {
-      ...validatedData,
-      diaChi: validatedData.diaChi, // Ensure diaChi is included
-      anhToaNha: newImageUrls,
-      tienNghiChung: validatedData.tienNghiChung || [],
-      updatedAt: new Date().toISOString(),
-      ngayCapNhat: new Date().toISOString(),
-    }, { new: true }); // Return updated document
+    const updatedToaNha = await withRetry(() => 
+      ToaNhaGS.findByIdAndUpdate(id, {
+        ...validatedData,
+        diaChi: validatedData.diaChi, // Ensure diaChi is included
+        anhToaNha: newImageUrls,
+        tienNghiChung: validatedData.tienNghiChung || [],
+        updatedAt: new Date().toISOString(),
+        ngayCapNhat: new Date().toISOString(),
+      }, { new: true })
+    ) as ToaNhaDocument | null;
+
+    if (!updatedToaNha) {
+      return notFoundResponse('Tòa nhà không tồn tại');
+    }
 
     // Populate chuSoHuu
-    if (updatedToaNha && updatedToaNha.chuSoHuu) {
-      const chuSoHuu = await NguoiDungGS.findById(updatedToaNha.chuSoHuu);
+    if (updatedToaNha.chuSoHuu) {
+      const chuSoHuu = await withRetry(() => NguoiDungGS.findById(updatedToaNha.chuSoHuu as string));
       updatedToaNha.chuSoHuu = chuSoHuu ? { _id: chuSoHuu._id, ten: chuSoHuu.ten, email: chuSoHuu.email } : null;
     }
 
     // Tính tổng số phòng thực tế
-    const allPhong = await PhongGS.find();
-    const phongCount = allPhong.filter((p: any) => p.toaNha === id).length;
+    const allPhong = await withRetry(() => PhongGS.find());
+    const phongCount = allPhong.filter((p) => compareIds(p.toaNha, id)).length;
     const toaNhaWithPhongCount = {
       ...updatedToaNha,
       tongSoPhong: phongCount
     };
 
-    return NextResponse.json({
-      success: true,
-      data: toaNhaWithPhongCount,
-      message: 'Tòa nhà đã được cập nhật thành công',
-    });
+    return successResponse(toaNhaWithPhongCount, 'Tòa nhà đã được cập nhật thành công');
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating toa nha:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật tòa nhà');
   }
 }
 
@@ -173,38 +164,32 @@ export async function DELETE(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
 
-    const toaNha = await ToaNhaGS.findById(id);
+    const toaNha = await withRetry(() => ToaNhaGS.findById(id)) as ToaNhaDocument | null;
     if (!toaNha) {
-      return NextResponse.json(
-        { message: 'Tòa nhà không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Tòa nhà không tồn tại');
     }
 
     // Check if user has permission to delete this toa nha
-    if (toaNha.chuSoHuu !== session.user.id && session.user.role !== 'admin') {
-      return NextResponse.json(
-        { message: 'Bạn không có quyền xóa tòa nhà này' },
-        { status: 403 }
-      );
+    const userId = session.user?.id || '';
+    const userRole = (session.user as { role?: string })?.role;
+    if (!compareIds(toaNha.chuSoHuu, userId) && userRole !== 'admin') {
+      return forbiddenResponse('Bạn không có quyền xóa tòa nhà này');
     }
 
     // Check if toa nha has rooms
-    const allPhong = await PhongGS.find();
-    const roomCount = allPhong.filter((p: any) => p.toaNha === id).length;
+    const allPhong = await withRetry(() => PhongGS.find());
+    const roomCount = allPhong.filter((p) => compareIds(p.toaNha, id)).length;
 
     if (roomCount > 0) {
-      return NextResponse.json(
-        { message: 'Không thể xóa tòa nhà có phòng. Vui lòng xóa tất cả phòng trước.' },
-        { status: 400 }
+      return errorResponse(
+        'Không thể xóa tòa nhà có phòng. Vui lòng xóa tất cả phòng trước.',
+        400,
+        'HAS_ROOMS'
       );
     }
 
@@ -220,18 +205,11 @@ export async function DELETE(
       }
     }
 
-    await ToaNhaGS.findByIdAndDelete(id);
+    await withRetry(() => ToaNhaGS.findByIdAndDelete(id));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Tòa nhà đã được xóa thành công',
-    });
+    return successResponse(null, 'Tòa nhà đã được xóa thành công');
 
   } catch (error) {
-    console.error('Error deleting toa nha:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa tòa nhà');
   }
 }
