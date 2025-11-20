@@ -412,8 +412,19 @@ function populateRelationships(
     };
   });
 
-  // Populate khachThue with hopDongHienTai
+  // Populate khachThue with hopDongHienTai and ensure anhCCCD is properly structured
   const khachThueWithHopDong = khachThue.map((kt: any) => {
+    // Ensure anhCCCD is properly structured
+    let anhCCCD = kt.anhCCCD;
+    if (!anhCCCD || typeof anhCCCD !== 'object' || Array.isArray(anhCCCD)) {
+      anhCCCD = { matTruoc: '', matSau: '' };
+    } else {
+      // Ensure it has the correct structure
+      anhCCCD = {
+        matTruoc: anhCCCD.matTruoc || '',
+        matSau: anhCCCD.matSau || ''
+      };
+    }
     // Tìm hợp đồng hiện tại cho khách thuê này
     const hopDongHienTai = hopDong.find((hd: any) => {
       const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : (hd.khachThueId ? [hd.khachThueId] : []);
@@ -475,6 +486,7 @@ function populateRelationships(
     
     return {
       ...kt,
+      anhCCCD: anhCCCD, // Ensure anhCCCD is properly structured
       hopDongHienTai: hopDongHienTaiPopulated,
     };
   });

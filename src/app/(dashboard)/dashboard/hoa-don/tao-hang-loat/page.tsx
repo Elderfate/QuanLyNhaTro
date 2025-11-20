@@ -67,20 +67,24 @@ export default function TaoHangLoatHoaDonPage() {
 
   // Get rooms with active contracts
   const availableRooms = useMemo(() => {
-    if (!allPhong || !activeContracts) return [];
+    if (!Array.isArray(allPhong) || !Array.isArray(activeContracts) || !Array.isArray(allHoaDon)) {
+      return [];
+    }
     
     const roomMap = new Map<string, { phong: Phong; hopDong: HopDong; hasInvoice: boolean }>();
     
     activeContracts.forEach((hd: HopDong) => {
-      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
+      if (!hd) return;
+      const phongId = typeof hd.phong === 'object' && hd.phong ? hd.phong._id : hd.phong;
       if (!phongId) return;
       
-      const phong = allPhong.find((p: Phong) => String(p._id) === String(phongId));
+      const phong = allPhong.find((p: Phong) => p && String(p._id) === String(phongId));
       if (!phong) return;
 
       // Check if invoice already exists
       const hasInvoice = allHoaDon.some((hdInvoice: any) => {
-        const hopDongId = typeof hdInvoice.hopDong === 'object' ? hdInvoice.hopDong._id : hdInvoice.hopDong;
+        if (!hdInvoice) return false;
+        const hopDongId = typeof hdInvoice.hopDong === 'object' && hdInvoice.hopDong ? hdInvoice.hopDong._id : hdInvoice.hopDong;
         return String(hopDongId) === String(hd._id) &&
                hdInvoice.thang === thang &&
                hdInvoice.nam === nam;
