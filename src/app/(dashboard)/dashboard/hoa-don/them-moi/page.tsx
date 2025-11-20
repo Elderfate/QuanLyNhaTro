@@ -178,20 +178,24 @@ export default function ThemMoiHoaDonPage() {
 
   const calculateTotal = useCallback(() => {
     setFormData(prev => {
-      const totalPhiDichVu = prev.phiDichVu.reduce((sum: number, phi) => sum + phi.gia, 0);
+      // Đảm bảo phiDichVu luôn là array
+      const phiDichVuArray = Array.isArray(prev.phiDichVu) ? prev.phiDichVu : [];
+      const totalPhiDichVu = phiDichVuArray.reduce((sum: number, phi) => {
+        return sum + (typeof phi.gia === 'number' ? phi.gia : 0);
+      }, 0);
       
-      const soDien = prev.chiSoDienCuoiKy - prev.chiSoDienBanDau;
-      const soNuoc = prev.chiSoNuocCuoiKy - prev.chiSoNuocBanDau;
+      const soDien = (prev.chiSoDienCuoiKy || 0) - (prev.chiSoDienBanDau || 0);
+      const soNuoc = (prev.chiSoNuocCuoiKy || 0) - (prev.chiSoNuocBanDau || 0);
       
-      const selectedHopDong = hopDongList.find(hd => hd._id === prev.hopDong);
+      const selectedHopDong = Array.isArray(hopDongList) ? hopDongList.find(hd => hd._id === prev.hopDong) : null;
       const giaDien = selectedHopDong?.giaDien || 0;
       const giaNuoc = selectedHopDong?.giaNuoc || 0;
       
       const tienDienTinh = soDien * giaDien;
       const tienNuocTinh = soNuoc * giaNuoc;
       
-      const total = prev.tienPhong + tienDienTinh + tienNuocTinh + totalPhiDichVu;
-      const conLai = total - prev.daThanhToan;
+      const total = (prev.tienPhong || 0) + tienDienTinh + tienNuocTinh + totalPhiDichVu;
+      const conLai = total - (prev.daThanhToan || 0);
       
       return {
         ...prev,
@@ -205,16 +209,15 @@ export default function ThemMoiHoaDonPage() {
     });
   }, [hopDongList]);
 
-  // Use a ref to track previous phiDichVu to avoid infinite loops
-  const prevPhiDichVuRef = useRef<string>('');
+  // Track phiDichVu changes using a stable key
+  const phiDichVuKey = useMemo(() => {
+    const phiDichVuArray = Array.isArray(formData.phiDichVu) ? formData.phiDichVu : [];
+    return phiDichVuArray.map(p => `${p.ten}-${p.gia}`).join(',');
+  }, [formData.phiDichVu]);
   
   useEffect(() => {
-    const phiDichVuKey = JSON.stringify(formData.phiDichVu);
-    if (phiDichVuKey !== prevPhiDichVuRef.current) {
-      prevPhiDichVuRef.current = phiDichVuKey;
-    }
     calculateTotal();
-  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, prevPhiDichVuRef.current, formData.daThanhToan, formData.hopDong, calculateTotal]);
+  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, phiDichVuKey, formData.daThanhToan, formData.hopDong, calculateTotal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -758,7 +761,7 @@ export default function ThemMoiHoaDonPage() {
               <TabsContent value="dich-vu" className="space-y-4 mt-6">
                 <h3 className="text-base font-semibold">🔧 Phí dịch vụ</h3>
                 
-                {formData.phiDichVu.length > 0 && (
+                {Array.isArray(formData.phiDichVu) && formData.phiDichVu.length > 0 && (
                   <div className="space-y-2">
                     {formData.phiDichVu.map((phi, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
