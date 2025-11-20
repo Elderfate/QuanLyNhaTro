@@ -160,6 +160,7 @@ export async function POST(request: NextRequest) {
           : null;
 
         // Reduce fields to avoid "Sheet is not large enough" error (max 30 columns)
+        // Reduce fields to avoid "Sheet is not large enough" error (max 30 columns)
         const hoaDonData = {
           _id: `hoadon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           maHoaDon: invoiceNumber,
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
           conLai: tongTien,
           hanThanhToan: dueDate.toISOString(),
           trangThai: 'chuaThanhToan',
-          ngayTao: new Date().toISOString(),
+          ghiChu: '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
