@@ -1,8 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
 import { updatePhongStatus, updateAllKhachThueStatus } from '@/lib/status-utils';
+import {
+  successResponse,
+  unauthorizedResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
 import { normalizeId, compareIds } from '@/lib/id-utils';
 import { withRetry } from '@/lib/retry-utils';
 import { z } from 'zod';
@@ -37,51 +44,55 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = hopDongSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = hopDongSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     // Check if phong exists
     const allPhong = await withRetry(() => PhongGS.find());
     const normalizedPhongId = normalizeId(validatedData.phong);
-    const phong = allPhong.find((p: any) => compareIds(p._id, normalizedPhongId));
+    if (!normalizedPhongId) {
+      return badRequestResponse('ID phòng không hợp lệ');
+    }
+    
+    const phong = allPhong.find((p) => compareIds(p._id, normalizedPhongId));
     if (!phong) {
-      return NextResponse.json(
-        { message: 'Phòng không tồn tại' },
-        { status: 400 }
-      );
+      return badRequestResponse('Phòng không tồn tại');
     }
 
     // Check if all khach thue exist
     const allKhachThue = await withRetry(() => KhachThueGS.find());
     const normalizedKhachThueIds = validatedData.khachThueId.map(id => normalizeId(id)).filter((id): id is string => id !== null);
-    const khachThueList = allKhachThue.filter((kt: any) => 
+    const khachThueList = allKhachThue.filter((kt) => 
       normalizedKhachThueIds.some(id => compareIds(kt._id, id))
     );
     if (khachThueList.length !== normalizedKhachThueIds.length) {
-      return NextResponse.json(
-        { message: 'Một hoặc nhiều khách thuê không tồn tại' },
-        { status: 400 }
-      );
+      return badRequestResponse('Một hoặc nhiều khách thuê không tồn tại');
     }
 
     // Check if nguoi dai dien is in khach thue list
     const normalizedNguoiDaiDien = normalizeId(validatedData.nguoiDaiDien);
+    if (!normalizedNguoiDaiDien) {
+      return badRequestResponse('ID người đại diện không hợp lệ');
+    }
+    
     if (!normalizedKhachThueIds.some(id => compareIds(id, normalizedNguoiDaiDien))) {
-      return NextResponse.json(
-        { message: 'Người đại diện phải là một trong các khách thuê' },
-        { status: 400 }
-      );
+      return badRequestResponse('Người đại diện phải là một trong các khách thuê');
     }
 
     // Kiểm tra phòng có hợp đồng đang hoạt động không
     const allHopDong = await withRetry(() => HopDongGS.find());
-    const existingHopDong = allHopDong.find((hd: any) => {
+    const existingHopDong = allHopDong.find((hd) => {
       if (hd.trangThai !== 'hoatDong') return false;
       if (!compareIds(hd.phong, normalizedPhongId)) return false;
       
@@ -96,10 +107,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingHopDong) {
-      return NextResponse.json(
-        { message: 'Phòng đã có hợp đồng trong khoảng thời gian này' },
-        { status: 400 }
-      );
+      return badRequestResponse('Phòng đã có hợp đồng trong khoảng thời gian này');
     }
 
     const newHopDong = await withRetry(() => HopDongGS.create({
@@ -158,24 +166,9 @@ export async function POST(request: NextRequest) {
       // Continue even if status update fails
     }
 
-    return NextResponse.json({
-      success: true,
-      data: newHopDong,
-      message: 'Hợp đồng đã được tạo thành công',
-    }, { status: 201 });
+    return successResponse(newHopDong, 'Hợp đồng đã được tạo thành công', 201);
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating hop dong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi tạo hợp đồng');
   }
 }
