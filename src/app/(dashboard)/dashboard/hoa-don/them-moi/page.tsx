@@ -13,15 +13,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   ArrowLeft,
   Save,
-  FileText,
   Zap,
   Droplets,
   Wrench,
-  Calculator,
   RefreshCw
 } from 'lucide-react';
 import { HopDong, Phong, KhachThue } from '@/types';
@@ -388,32 +385,12 @@ export default function ThemMoiHoaDonPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4 md:p-6">
-          <form onSubmit={handleSubmit}>
-            <Tabs defaultValue="thong-tin" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="thong-tin" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm px-2 md:px-3">
-                  <FileText className="h-3 w-3 md:h-4 md:w-4" />
-                  <span className="hidden sm:inline">Thông tin</span>
-                  <span className="sm:hidden">Info</span>
-                </TabsTrigger>
-                <TabsTrigger value="dien-nuoc" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm px-2 md:px-3">
-                  <Zap className="h-3 w-3 md:h-4 md:w-4" />
-                  <span className="hidden sm:inline">Điện & Nước</span>
-                  <span className="sm:hidden">Đ&N</span>
-                </TabsTrigger>
-                <TabsTrigger value="dich-vu" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm px-2 md:px-3">
-                  <Wrench className="h-3 w-3 md:h-4 md:w-4" />
-                  <span className="hidden sm:inline">Dịch vụ</span>
-                  <span className="sm:hidden">DV</span>
-                </TabsTrigger>
-                <TabsTrigger value="tong-ket" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm px-2 md:px-3">
-                  <Calculator className="h-3 w-3 md:h-4 md:w-4" />
-                  <span className="hidden sm:inline">Tổng kết</span>
-                  <span className="sm:hidden">TK</span>
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="thong-tin" className="space-y-3 md:space-y-4 mt-4 md:mt-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Section 1: Thông tin cơ bản */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <h3 className="text-base font-semibold">📋 Thông tin cơ bản</h3>
+              </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                   <div className="space-y-1">
                     <Label htmlFor="maHoaDon" className="text-xs md:text-sm">Mã hóa đơn</Label>
@@ -605,11 +582,12 @@ export default function ThemMoiHoaDonPage() {
                     />
                   </div>
                 </div>
-              </TabsContent>
+            </div>
 
-              <TabsContent value="dien-nuoc" className="space-y-4 mt-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold">⚡💧 Chỉ số điện & nước</h3>
+            {/* Section 2: Điện & Nước */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b">
+                <h3 className="text-base font-semibold">⚡💧 Chỉ số điện & nước</h3>
                   {readingSource && (
                     <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
                       {readingSource.isFirstInvoice 
@@ -807,10 +785,13 @@ export default function ThemMoiHoaDonPage() {
                     <div className="text-lg font-bold text-blue-600">{formData.tienNuoc.toLocaleString('vi-VN')} VNĐ</div>
                   </div>
                 </div>
-              </TabsContent>
+            </div>
 
-              <TabsContent value="dich-vu" className="space-y-4 mt-6">
+            {/* Section 3: Phí dịch vụ */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
                 <h3 className="text-base font-semibold">🔧 Phí dịch vụ</h3>
+              </div>
                 
                 {Array.isArray(formData.phiDichVu) && formData.phiDichVu.length > 0 && (
                   <div className="space-y-2">
@@ -861,10 +842,13 @@ export default function ThemMoiHoaDonPage() {
                     </Button>
                   </div>
                 </div>
-              </TabsContent>
+            </div>
 
-              <TabsContent value="tong-ket" className="space-y-4 mt-6">
+            {/* Section 4: Tổng kết */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
                 <h3 className="text-base font-semibold">💰 Tổng kết</h3>
+              </div>
                 <div className="grid grid-cols-3 gap-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
                   <div className="text-center">
                     <div className="text-xs text-gray-600 mb-1">Tổng tiền</div>
@@ -910,31 +894,31 @@ export default function ThemMoiHoaDonPage() {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row justify-end gap-2 md:gap-3 pt-4 border-t">
-                  <Button 
-                    type="button" 
-                    variant="outline"
-                    size="sm"
-                    onClick={() => router.push('/dashboard/hoa-don')}
-                    disabled={submitting}
-                    className="w-full sm:w-auto sm:min-w-[80px]"
-                  >
-                    Hủy
-                  </Button>
-                  <Button 
-                    type="submit"
-                    size="sm"
-                    loading={submitting}
-                    disabled={submitting}
-                    className="w-full sm:w-auto sm:min-w-[120px]"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    Tạo hóa đơn
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row justify-end gap-2 md:gap-3 pt-4 border-t">
+              <Button 
+                type="button" 
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/dashboard/hoa-don')}
+                disabled={submitting}
+                className="w-full sm:w-auto sm:min-w-[80px]"
+              >
+                Hủy
+              </Button>
+              <Button 
+                type="submit"
+                size="sm"
+                loading={submitting}
+                disabled={submitting}
+                className="w-full sm:w-auto sm:min-w-[120px]"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Tạo hóa đơn
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
