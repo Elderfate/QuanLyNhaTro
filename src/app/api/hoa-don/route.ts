@@ -208,10 +208,11 @@ export async function POST(request: NextRequest) {
     const ngayThanhToan = hopDongData.ngayThanhToan || 1;
     const hanThanhToanDate = new Date(nam, thang - 1, ngayThanhToan);
 
+    // Reduce fields to avoid "Sheet is not large enough" error
+    // Only include essential fields (max 30 columns)
     const hoaDonData = {
       _id: `hoadon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       maHoaDon: finalMaHoaDon,
-      soHoaDon: finalMaHoaDon,
       hopDong: hopDong,
       phong: phongId,
       khachThue: khachThueId,
@@ -222,12 +223,10 @@ export async function POST(request: NextRequest) {
       soDien,
       chiSoDienBanDau: chiSoDienBanDauValue,
       chiSoDienCuoiKy: chiSoDienCuoiKyValue,
-      chiSoDienMoi: chiSoDienCuoiKyValue,
       tienNuoc: tienNuocTinh,
       soNuoc,
       chiSoNuocBanDau: chiSoNuocBanDauValue,
       chiSoNuocCuoiKy: chiSoNuocCuoiKyValue,
-      chiSoNuocMoi: chiSoNuocCuoiKyValue,
       phiDichVu: phiDichVu || [],
       tienDichVu: tienDichVu,
       tongTien,
@@ -236,7 +235,6 @@ export async function POST(request: NextRequest) {
       trangThai: 'chuaThanhToan',
       hanThanhToan: hanThanhToanDate.toISOString(),
       ghiChu: ghiChu || '',
-      ngayTao: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

@@ -129,6 +129,8 @@ export default function TaoHangLoatHoaDonPage() {
       return;
     }
 
+    if (isSubmitting) return; // Prevent double submission
+    
     setIsSubmitting(true);
     setResults(null);
 

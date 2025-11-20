@@ -24,11 +24,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get all contracts and invoices
-    const allHopDong = await HopDongGS.find();
-    const allHoaDon = await HoaDonGS.find();
-    const allPhong = await PhongGS.find();
-    const allKhachThue = await KhachThueGS.find();
+    // Get all contracts and invoices with retry logic for 429 errors
+    let allHopDong, allHoaDon, allPhong, allKhachThue;
+    let retries = 0;
+    const maxRetries = 3;
+    
+    // Helper function to retry on 429
+    const retryFetch = async (fn: () => Promise<any>, name: string) => {
+      retries = 0;
+      while (retries < maxRetries) {
+        try {
+          return await fn();
+        } catch (error: any) {
+          if (error.response?.status === 429 && retries < maxRetries - 1) {
+            const waitTime = (retries + 1) * 2000;
+            console.log(`API 429 error fetching ${name}, retrying in ${waitTime}ms... (attempt ${retries + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            retries++;
+          } else {
+            throw error;
+          }
+        }
+      }
+    };
+    
+    try {
+      allHopDong = await retryFetch(() => HopDongGS.find(), 'contracts');
+      allHoaDon = await retryFetch(() => HoaDonGS.find(), 'invoices');
+      allPhong = await retryFetch(() => PhongGS.find(), 'rooms');
+      allKhachThue = await retryFetch(() => KhachThueGS.find(), 'tenants');
+    } catch (error: any) {
+      console.error('Error fetching data for batch invoice creation:', error);
+      return NextResponse.json(
+        { 
+          success: false,
+          message: error.response?.status === 429 
+            ? 'Quá nhiều yêu cầu. Vui lòng thử lại sau vài giây.'
+            : 'Lỗi khi tải dữ liệu từ hệ thống',
+          data: { created: 0, total: 0, results: [], errors: [] }
+        },
+        { status: error.response?.status || 500 }
+      );
+    }
 
     const results = [];
     const errors = [];
@@ -122,10 +159,10 @@ export async function POST(request: NextRequest) {
           ? allKhachThue.find((kt: any) => String(kt._id) === String(hopDong.nguoiDaiDien))
           : null;
 
+        // Reduce fields to avoid "Sheet is not large enough" error (max 30 columns)
         const hoaDonData = {
           _id: `hoadon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           maHoaDon: invoiceNumber,
-          soHoaDon: invoiceNumber,
           hopDong: hopDong._id,
           phong: phongId,
           khachThue: nguoiDaiDien?._id || hopDong.nguoiDaiDien,

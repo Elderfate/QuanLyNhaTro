@@ -23,8 +23,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Kiểm tra hợp đồng tồn tại
-    const hopDongData = await HopDongGS.findById(hopDongId);
+    // Kiểm tra hợp đồng tồn tại với retry logic
+    let hopDongData;
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries < maxRetries) {
+      try {
+        hopDongData = await HopDongGS.findById(hopDongId);
+        break;
+      } catch (error: any) {
+        if (error.response?.status === 429 && retries < maxRetries - 1) {
+          // Quota exceeded - wait and retry
+          const waitTime = (retries + 1) * 2000; // Exponential backoff: 2s, 4s, 6s
+          console.log(`API 429 error, retrying in ${waitTime}ms... (attempt ${retries + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          retries++;
+        } else {
+          throw error;
+        }
+      }
+    }
+    
     if (!hopDongData) {
       return NextResponse.json(
         { message: 'Hợp đồng không tồn tại' },
@@ -32,8 +52,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Tìm hóa đơn gần nhất để lấy chỉ số cuối kỳ
-    const allHoaDon = await HoaDonGS.find();
+    // Tìm hóa đơn gần nhất để lấy chỉ số cuối kỳ với retry logic
+    let allHoaDon;
+    retries = 0;
+    
+    while (retries < maxRetries) {
+      try {
+        allHoaDon = await HoaDonGS.find();
+        break;
+      } catch (error: any) {
+        if (error.response?.status === 429 && retries < maxRetries - 1) {
+          const waitTime = (retries + 1) * 2000;
+          console.log(`API 429 error fetching invoices, retrying in ${waitTime}ms... (attempt ${retries + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          retries++;
+        } else {
+          // If we can't fetch all invoices, return default values
+          console.warn('Could not fetch invoices, using contract default values');
+          allHoaDon = [];
+          break;
+        }
+      }
+    }
     const hoaDonCuaHopDong = allHoaDon
       .filter((hd: any) => hd.hopDong === hopDongId)
       .filter((hd: any) => hd.nam < nam || (hd.nam === nam && hd.thang < thang))
@@ -68,11 +108,30 @@ export async function GET(request: NextRequest) {
         ? `Lấy chỉ số từ hóa đơn ${lastHoaDon.thang}/${lastHoaDon.nam}` 
         : 'Lấy chỉ số ban đầu từ hợp đồng'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching latest electricity reading:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    
+    // Handle 429 errors specifically
+    if (error.response?.status === 429) {
+      return NextResponse.json(
+        { 
+          message: 'Quá nhiều yêu cầu. Vui lòng thử lại sau vài giây.',
+          error: 'QUOTA_EXCEEDED'
+        },
+        { status: 429 }
+      );
+    }
+    
+    // Return default values instead of error to prevent UI crash
+    return NextResponse.json({
+      success: true,
+      data: {
+        chiSoDienBanDau: 0,
+        chiSoNuocBanDau: 0,
+        isFirstInvoice: true,
+        lastInvoiceMonth: null
+      },
+      message: 'Không thể lấy chỉ số từ hệ thống, sử dụng giá trị mặc định'
+    });
   }
 }
