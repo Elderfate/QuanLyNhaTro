@@ -230,9 +230,10 @@ export async function PUT(
       if (nguoiDaiDien) {
         (hopDong as { nguoiDaiDien?: unknown }).nguoiDaiDien = {
           _id: nguoiDaiDien._id,
-        hoTen: (nguoiDaiDien as { ten?: string; hoTen?: string }).ten || (nguoiDaiDien as { hoTen?: string }).hoTen || '',
-        soDienThoai: (nguoiDaiDien as { soDienThoai: string }).soDienThoai
-      } : null;
+          hoTen: (nguoiDaiDien as { ten?: string; hoTen?: string }).ten || (nguoiDaiDien as { hoTen?: string }).hoTen || '',
+          soDienThoai: (nguoiDaiDien as { soDienThoai: string }).soDienThoai
+        };
+      }
     }
 
     // Cập nhật trạng thái phòng và khách thuê tự động
