@@ -1,8 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { HopDongGS, PhongGS, KhachThueGS, NguoiDungGS } from '@/lib/googlesheets-models';
+import { HopDongGS, PhongGS, KhachThueGS } from '@/lib/googlesheets-models';
 import { updatePhongStatus, updateAllKhachThueStatus } from '@/lib/status-utils';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { normalizeId, compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
+import type { HopDongDocument } from '@/lib/api-types';
 import { z } from 'zod';
 
 const phiDichVuSchema = z.object({
@@ -59,8 +70,9 @@ export async function GET(
     }
 
     // Populate phong
-    if (hopDong.phong) {
-      const phong = await PhongGS.findById(hopDong.phong);
+    const phongId = normalizeId(hopDong.phong);
+    if (phongId) {
+      const phong = await withRetry(() => PhongGS.findById(phongId));
       hopDong.phong = phong ? {
         _id: phong._id,
         maPhong: phong.maPhong,
@@ -72,38 +84,32 @@ export async function GET(
     if (hopDong.khachThueId) {
       const khachThueIds = Array.isArray(hopDong.khachThueId) ? hopDong.khachThueId : [hopDong.khachThueId];
       const khachThueList = await Promise.all(
-        khachThueIds.map((ktId: string) => KhachThueGS.findById(ktId))
+        khachThueIds.map((ktId) => withRetry(() => KhachThueGS.findById(ktId)))
       );
       hopDong.khachThueId = khachThueList
         .filter(kt => kt)
-        .map((kt: any) => ({
+        .map((kt) => ({
           _id: kt._id,
-          hoTen: kt.ten || kt.hoTen,
-          soDienThoai: kt.soDienThoai
+          hoTen: (kt as { ten?: string; hoTen?: string }).ten || (kt as { hoTen?: string }).hoTen || '',
+          soDienThoai: (kt as { soDienThoai: string }).soDienThoai
         }));
     }
 
     // Populate nguoiDaiDien
-    if (hopDong.nguoiDaiDien) {
-      const nguoiDaiDien = await KhachThueGS.findById(hopDong.nguoiDaiDien);
+    const nguoiDaiDienId = normalizeId(hopDong.nguoiDaiDien);
+    if (nguoiDaiDienId) {
+      const nguoiDaiDien = await withRetry(() => KhachThueGS.findById(nguoiDaiDienId));
       hopDong.nguoiDaiDien = nguoiDaiDien ? {
         _id: nguoiDaiDien._id,
-        hoTen: nguoiDaiDien.ten || nguoiDaiDien.hoTen,
-        soDienThoai: nguoiDaiDien.soDienThoai
+        hoTen: (nguoiDaiDien as { ten?: string; hoTen?: string }).ten || (nguoiDaiDien as { hoTen?: string }).hoTen || '',
+        soDienThoai: (nguoiDaiDien as { soDienThoai: string }).soDienThoai
       } : null;
     }
 
-    return NextResponse.json({
-      success: true,
-      data: hopDong,
-    });
+    return successResponse(hopDong);
 
   } catch (error) {
-    console.error('Error fetching hop dong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi lấy thông tin hợp đồng');
   }
 }
 
@@ -115,80 +121,86 @@ export async function PUT(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = hopDongPartialSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = hopDongPartialSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     const { id } = await params;
 
     // Lấy hợp đồng hiện tại để kiểm tra
-    const existingHopDong = await HopDongGS.findById(id);
+    const existingHopDong = await withRetry(() => HopDongGS.findById(id)) as HopDongDocument | null;
     if (!existingHopDong) {
-      return NextResponse.json(
-        { message: 'Hợp đồng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Hợp đồng không tồn tại');
     }
 
     // Nếu có cập nhật phòng, kiểm tra phòng tồn tại
     if (validatedData.phong) {
-      const phong = await PhongGS.findById(validatedData.phong);
+      const normalizedPhongId = normalizeId(validatedData.phong);
+      const phong = normalizedPhongId ? await withRetry(() => PhongGS.findById(normalizedPhongId)) : null;
       if (!phong) {
-        return NextResponse.json(
-          { message: 'Phòng không tồn tại' },
-          { status: 400 }
-        );
+        return badRequestResponse('Phòng không tồn tại');
       }
     }
 
     // Nếu có cập nhật khách thuê, kiểm tra khách thuê tồn tại
     if (validatedData.khachThueId) {
-      const allKhachThue = await KhachThueGS.find();
-      const khachThueList = allKhachThue.filter((kt: any) => 
-        validatedData.khachThueId!.includes(kt._id)
+      const normalizedKhachThueIds = validatedData.khachThueId.map(id => normalizeId(id)).filter((id): id is string => id !== null);
+      const allKhachThue = await withRetry(() => KhachThueGS.find());
+      const khachThueList = allKhachThue.filter((kt) => 
+        normalizedKhachThueIds.some(id => compareIds(kt._id, id))
       );
-      if (khachThueList.length !== validatedData.khachThueId.length) {
-        return NextResponse.json(
-          { message: 'Một hoặc nhiều khách thuê không tồn tại' },
-          { status: 400 }
-        );
+      if (khachThueList.length !== normalizedKhachThueIds.length) {
+        return badRequestResponse('Một hoặc nhiều khách thuê không tồn tại');
       }
     }
 
     // Nếu có cập nhật người đại diện, kiểm tra người đại diện có trong danh sách khách thuê không
     if (validatedData.nguoiDaiDien && validatedData.khachThueId) {
-      if (!validatedData.khachThueId.includes(validatedData.nguoiDaiDien)) {
-        return NextResponse.json(
-          { message: 'Người đại diện phải là một trong các khách thuê' },
-          { status: 400 }
-        );
+      const normalizedNguoiDaiDien = normalizeId(validatedData.nguoiDaiDien);
+      const normalizedKhachThueIds = validatedData.khachThueId.map(id => normalizeId(id)).filter((id): id is string => id !== null);
+      if (!normalizedNguoiDaiDien || !normalizedKhachThueIds.some(id => compareIds(id, normalizedNguoiDaiDien))) {
+        return badRequestResponse('Người đại diện phải là một trong các khách thuê');
       }
     }
 
     // Chuẩn bị dữ liệu cập nhật
-    const updateData: any = { ...validatedData };
+    const updateData: Partial<HopDongDocument> = { ...validatedData };
+    
+    // Normalize IDs if provided
+    if (validatedData.phong) {
+      updateData.phong = normalizeId(validatedData.phong) || validatedData.phong;
+    }
+    if (validatedData.khachThueId) {
+      updateData.khachThueId = validatedData.khachThueId.map(id => normalizeId(id)).filter((id): id is string => id !== null);
+    }
+    if (validatedData.nguoiDaiDien) {
+      updateData.nguoiDaiDien = normalizeId(validatedData.nguoiDaiDien) || validatedData.nguoiDaiDien;
+    }
     
     // Xử lý ngày tháng - giữ nguyên string format cho Google Sheets
     updateData.updatedAt = new Date().toISOString();
     updateData.ngayCapNhat = new Date().toISOString();
 
-    const hopDong = await HopDongGS.findByIdAndUpdate(id, updateData);
+    const hopDong = await withRetry(() => HopDongGS.findByIdAndUpdate(id, updateData)) as HopDongDocument | null;
 
     if (!hopDong) {
-      return NextResponse.json(
-        { message: 'Hợp đồng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Hợp đồng không tồn tại');
     }
 
     // Populate lại dữ liệu
-    if (hopDong.phong) {
-      const phong = await PhongGS.findById(hopDong.phong);
+    const phongId = normalizeId(hopDong.phong);
+    if (phongId) {
+      const phong = await withRetry(() => PhongGS.findById(phongId));
       hopDong.phong = phong ? {
         _id: phong._id,
         maPhong: phong.maPhong,
@@ -199,60 +211,47 @@ export async function PUT(
     if (hopDong.khachThueId) {
       const khachThueIds = Array.isArray(hopDong.khachThueId) ? hopDong.khachThueId : [hopDong.khachThueId];
       const khachThueList = await Promise.all(
-        khachThueIds.map((ktId: string) => KhachThueGS.findById(ktId))
+        khachThueIds.map((ktId) => withRetry(() => KhachThueGS.findById(ktId)))
       );
       hopDong.khachThueId = khachThueList
         .filter(kt => kt)
-        .map((kt: any) => ({
+        .map((kt) => ({
           _id: kt._id,
-          hoTen: kt.ten || kt.hoTen,
-          soDienThoai: kt.soDienThoai
+          hoTen: (kt as { ten?: string; hoTen?: string }).ten || (kt as { hoTen?: string }).hoTen || '',
+          soDienThoai: (kt as { soDienThoai: string }).soDienThoai
         }));
     }
 
-    if (hopDong.nguoiDaiDien) {
-      const nguoiDaiDien = await KhachThueGS.findById(hopDong.nguoiDaiDien);
+    const nguoiDaiDienId = normalizeId(hopDong.nguoiDaiDien);
+    if (nguoiDaiDienId) {
+      const nguoiDaiDien = await withRetry(() => KhachThueGS.findById(nguoiDaiDienId));
       hopDong.nguoiDaiDien = nguoiDaiDien ? {
         _id: nguoiDaiDien._id,
-        hoTen: nguoiDaiDien.ten || nguoiDaiDien.hoTen,
-        soDienThoai: nguoiDaiDien.soDienThoai
+        hoTen: (nguoiDaiDien as { ten?: string; hoTen?: string }).ten || (nguoiDaiDien as { hoTen?: string }).hoTen || '',
+        soDienThoai: (nguoiDaiDien as { soDienThoai: string }).soDienThoai
       } : null;
     }
 
     // Cập nhật trạng thái phòng và khách thuê tự động
-    const phongId = hopDong.phong?._id || hopDong.phong;
     if (phongId) {
       await updatePhongStatus(phongId);
     }
     
     if (validatedData.khachThueId) {
-      await updateAllKhachThueStatus(validatedData.khachThueId);
+      const normalizedKhachThueIds = validatedData.khachThueId.map(id => normalizeId(id)).filter((id): id is string => id !== null);
+      await updateAllKhachThueStatus(normalizedKhachThueIds);
     } else {
       const existingKhachThueIds = Array.isArray(existingHopDong.khachThueId) 
         ? existingHopDong.khachThueId 
         : [existingHopDong.khachThueId];
-      await updateAllKhachThueStatus(existingKhachThueIds);
+      const normalizedExistingIds = existingKhachThueIds.map(id => normalizeId(id)).filter((id): id is string => id !== null);
+      await updateAllKhachThueStatus(normalizedExistingIds);
     }
 
-    return NextResponse.json({
-      success: true,
-      data: hopDong,
-      message: 'Hợp đồng đã được cập nhật thành công',
-    });
+    return successResponse(hopDong, 'Hợp đồng đã được cập nhật thành công');
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating hop dong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật hợp đồng');
   }
 }
 
@@ -264,46 +263,34 @@ export async function DELETE(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
 
-    const hopDong = await HopDongGS.findById(id);
+    const hopDong = await withRetry(() => HopDongGS.findById(id)) as HopDongDocument | null;
     if (!hopDong) {
-      return NextResponse.json(
-        { message: 'Hợp đồng không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Hợp đồng không tồn tại');
     }
 
     // Lưu thông tin phòng và khách thuê trước khi xóa
-    const phongId = hopDong.phong;
+    const phongId = normalizeId(hopDong.phong);
     const khachThueIds = Array.isArray(hopDong.khachThueId) 
       ? hopDong.khachThueId 
       : [hopDong.khachThueId];
+    const normalizedKhachThueIds = khachThueIds.map(id => normalizeId(id)).filter((id): id is string => id !== null);
 
-    await HopDongGS.findByIdAndDelete(id);
+    await withRetry(() => HopDongGS.findByIdAndDelete(id));
 
     // Cập nhật trạng thái phòng và khách thuê sau khi xóa hợp đồng
     if (phongId) {
       await updatePhongStatus(phongId);
     }
-    await updateAllKhachThueStatus(khachThueIds);
+    await updateAllKhachThueStatus(normalizedKhachThueIds);
 
-    return NextResponse.json({
-      success: true,
-      message: 'Hợp đồng đã được xóa thành công',
-    });
+    return successResponse(null, 'Hợp đồng đã được xóa thành công');
 
   } catch (error) {
-    console.error('Error deleting hop dong:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa hợp đồng');
   }
 }

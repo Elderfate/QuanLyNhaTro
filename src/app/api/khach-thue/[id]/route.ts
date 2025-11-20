@@ -1,8 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { KhachThueGS } from '@/lib/googlesheets-models';
 import { deleteCloudinaryImages } from '@/lib/cloudinary-utils';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
+import type { KhachThueDocument } from '@/lib/api-types';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 
@@ -30,34 +41,21 @@ export async function GET(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
 
-    const khachThue = await KhachThueGS.findById(id);
+    const khachThue = await withRetry(() => KhachThueGS.findById(id)) as KhachThueDocument | null;
 
     if (!khachThue) {
-      return NextResponse.json(
-        { message: 'Khách thuê không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Khách thuê không tồn tại');
     }
 
-    return NextResponse.json({
-      success: true,
-      data: khachThue,
-    });
+    return successResponse(khachThue);
 
   } catch (error) {
-    console.error('Error fetching khach thue:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi lấy thông tin khách thuê');
   }
 }
 
@@ -69,24 +67,26 @@ export async function PUT(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = khachThueSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = khachThueSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     const { id } = await params;
 
     // Get existing khach thue to check for deleted images
-    const existingKhachThue = await KhachThueGS.findById(id);
+    const existingKhachThue = await withRetry(() => KhachThueGS.findById(id)) as KhachThueDocument | null;
     if (!existingKhachThue) {
-      return NextResponse.json(
-        { message: 'Khách thuê không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Khách thuê không tồn tại');
     }
 
     // Normalize phone number for comparison
@@ -103,19 +103,17 @@ export async function PUT(
     const normalizedInputPhone = normalizePhone(validatedData.soDienThoai);
 
     // Check if phone or CCCD already exists (excluding current record)
-    const allKhachThue = await KhachThueGS.find();
-    const duplicateKhachThue = allKhachThue.find((kt: any) => {
-      if (kt._id === id) return false;
+    const allKhachThue = await withRetry(() => KhachThueGS.find());
+    const duplicateKhachThue = allKhachThue.find((kt) => {
+      if (compareIds(kt._id, id)) return false;
       const normalizedStoredPhone = normalizePhone(kt.soDienThoai);
+      const storedCCCD = (kt as KhachThueDocument).soCCCD || (kt as KhachThueDocument).cccd;
       return normalizedStoredPhone === normalizedInputPhone || 
-             (kt.soCCCD || kt.cccd) === validatedData.cccd;
+             storedCCCD === validatedData.cccd;
     });
 
     if (duplicateKhachThue) {
-      return NextResponse.json(
-        { message: 'Số điện thoại hoặc CCCD đã được sử dụng' },
-        { status: 400 }
-      );
+      return badRequestResponse('Số điện thoại hoặc CCCD đã được sử dụng');
     }
 
     // Handle image deletion from Cloudinary if CCCD images were removed
@@ -148,7 +146,7 @@ export async function PUT(
     }
 
     // Prepare update data
-    const updateData: any = {
+    const updateData: Partial<KhachThueDocument> = {
       ...validatedData,
       ten: validatedData.hoTen,
       hoTen: validatedData.hoTen,
@@ -162,81 +160,53 @@ export async function PUT(
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
     };
-    
-    console.log('💾 Update data with anhCCCD:', {
-      matTruoc: updateData.anhCCCD.matTruoc,
-      matSau: updateData.anhCCCD.matSau
-    });
 
     // Nếu có mật khẩu mới, hash password
     if (validatedData.matKhau) {
       const salt = await bcrypt.genSalt(12);
       const hashedPassword = await bcrypt.hash(validatedData.matKhau, salt);
       updateData.matKhau = hashedPassword;
-      updateData.password = hashedPassword;
+      (updateData as { password?: string }).password = hashedPassword;
     } else {
       delete updateData.matKhau;
-      delete updateData.password;
+      delete (updateData as { password?: string }).password;
     }
 
-    const khachThue = await KhachThueGS.findByIdAndUpdate(id, updateData, { new: true });
+    const khachThue = await withRetry(() => 
+      KhachThueGS.findByIdAndUpdate(id, updateData, { new: true })
+    ) as KhachThueDocument | null;
 
     if (!khachThue) {
-      return NextResponse.json(
-        { message: 'Khách thuê không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Khách thuê không tồn tại');
     }
 
     // Ensure anhCCCD is included in response - get fresh data after update
-    const updatedKhachThue = await KhachThueGS.findById(id);
+    const updatedKhachThue = await withRetry(() => KhachThueGS.findById(id)) as KhachThueDocument | null;
     
-    const responseData = {
-      ...updatedKhachThue,
-      anhCCCD: updatedKhachThue?.anhCCCD || { matTruoc: '', matSau: '' }
-    };
-    
-    // Ensure anhCCCD is properly structured
-    if (!responseData.anhCCCD || typeof responseData.anhCCCD !== 'object') {
-      responseData.anhCCCD = { matTruoc: '', matSau: '' };
+    if (!updatedKhachThue) {
+      return notFoundResponse('Khách thuê không tồn tại');
     }
     
-    // Extract matTruoc and matSau from the object
-    const anhCCCDObj = updatedKhachThue?.anhCCCD || {};
-    if (typeof anhCCCDObj === 'object' && !Array.isArray(anhCCCDObj)) {
-      responseData.anhCCCD = {
-        matTruoc: anhCCCDObj.matTruoc || '',
-        matSau: anhCCCDObj.matSau || ''
+    // Ensure anhCCCD is properly structured
+    let anhCCCD = updatedKhachThue.anhCCCD;
+    if (!anhCCCD || typeof anhCCCD !== 'object' || Array.isArray(anhCCCD)) {
+      anhCCCD = { matTruoc: '', matSau: '' };
+    } else {
+      anhCCCD = {
+        matTruoc: (anhCCCD as { matTruoc?: string }).matTruoc || '',
+        matSau: (anhCCCD as { matSau?: string }).matSau || ''
       };
     }
     
-    console.log('✅ Response data with anhCCCD:', {
-      matTruoc: responseData.anhCCCD?.matTruoc,
-      matSau: responseData.anhCCCD?.matSau,
-      hasMatTruoc: !!responseData.anhCCCD?.matTruoc,
-      hasMatSau: !!responseData.anhCCCD?.matSau,
-      rawAnhCCCD: updatedKhachThue?.anhCCCD
-    });
+    const responseData = {
+      ...updatedKhachThue,
+      anhCCCD
+    };
 
-    return NextResponse.json({
-      success: true,
-      data: responseData,
-      message: 'Khách thuê đã được cập nhật thành công',
-    });
+    return successResponse(responseData, 'Khách thuê đã được cập nhật thành công');
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating khach thue:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi cập nhật khách thuê');
   }
 }
 
@@ -248,27 +218,23 @@ export async function DELETE(
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { id } = await params;
 
-    const khachThue = await KhachThueGS.findById(id);
+    const khachThue = await withRetry(() => KhachThueGS.findById(id)) as KhachThueDocument | null;
     if (!khachThue) {
-      return NextResponse.json(
-        { message: 'Khách thuê không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Khách thuê không tồn tại');
     }
 
     // Delete CCCD images from Cloudinary before deleting the record
     const anhCCCD = khachThue.anhCCCD || { matTruoc: '', matSau: '' };
     const imageUrls: string[] = [];
-    if (anhCCCD.matTruoc) imageUrls.push(anhCCCD.matTruoc);
-    if (anhCCCD.matSau) imageUrls.push(anhCCCD.matSau);
+    if (typeof anhCCCD === 'object' && !Array.isArray(anhCCCD)) {
+      if (anhCCCD.matTruoc) imageUrls.push(anhCCCD.matTruoc);
+      if (anhCCCD.matSau) imageUrls.push(anhCCCD.matSau);
+    }
     
     if (imageUrls.length > 0) {
       try {
@@ -280,18 +246,11 @@ export async function DELETE(
       }
     }
 
-    await KhachThueGS.findByIdAndDelete(id);
+    await withRetry(() => KhachThueGS.findByIdAndDelete(id));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Khách thuê đã được xóa thành công',
-    });
+    return successResponse(null, 'Khách thuê đã được xóa thành công');
 
   } catch (error) {
-    console.error('Error deleting khach thue:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa khách thuê');
   }
 }

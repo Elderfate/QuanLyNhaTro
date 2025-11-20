@@ -1,8 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { KhachThueGS, HopDongGS, PhongGS } from '@/lib/googlesheets-models';
-import { updateKhachThueStatus } from '@/lib/status-utils';
+import { KhachThueGS } from '@/lib/googlesheets-models';
+import {
+  successResponse,
+  unauthorizedResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  badRequestResponse,
+} from '@/lib/api-response';
+import { withRetry } from '@/lib/retry-utils';
 import { z } from 'zod';
 
 const khachThueSchema = z.object({
@@ -26,14 +33,19 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = khachThueSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = khachThueSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     // Normalize phone number for comparison
     const normalizePhone = (phone: string | number | null | undefined): string => {
@@ -49,48 +61,28 @@ export async function POST(request: NextRequest) {
     const normalizedInputPhone = normalizePhone(validatedData.soDienThoai);
     
     // Check if phone or CCCD already exists
-    const allKhachThue = await KhachThueGS.find();
-    const existingKhachThue = allKhachThue.find((kt: any) => {
+    const allKhachThue = await withRetry(() => KhachThueGS.find());
+    const existingKhachThue = allKhachThue.find((kt) => {
       const normalizedStoredPhone = normalizePhone(kt.soDienThoai);
+      const storedCCCD = (kt as { cccd?: string }).cccd;
       return normalizedStoredPhone === normalizedInputPhone || 
-             kt.cccd === validatedData.cccd;
+             storedCCCD === validatedData.cccd;
     });
 
     if (existingKhachThue) {
-      return NextResponse.json(
-        { message: 'Số điện thoại hoặc CCCD đã được sử dụng' },
-        { status: 400 }
-      );
+      return badRequestResponse('Số điện thoại hoặc CCCD đã được sử dụng');
     }
 
-    const newKhachThue = await KhachThueGS.create({
+    const newKhachThue = await withRetry(() => KhachThueGS.create({
       ...validatedData,
       ngaySinh: new Date(validatedData.ngaySinh).toISOString(),
       anhCCCD: validatedData.anhCCCD || { matTruoc: '', matSau: '' },
       trangThai: 'chuaThue', // Mặc định là chưa thuê
-    });
+    }));
 
-    // TODO: Implement updateKhachThueStatus for Google Sheets if needed
-    // await updateKhachThueStatus(newKhachThue._id.toString());
-
-    return NextResponse.json({
-      success: true,
-      data: newKhachThue,
-      message: 'Khách thuê đã được tạo thành công',
-    }, { status: 201 });
+    return successResponse(newKhachThue, 'Khách thuê đã được tạo thành công', 201);
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating khach thue:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi tạo khách thuê');
   }
 }
