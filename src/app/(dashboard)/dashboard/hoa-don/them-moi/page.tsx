@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -108,14 +108,21 @@ export default function ThemMoiHoaDonPage() {
     isFirstInvoice: boolean;
     lastInvoiceMonth: string | null;
   } | null>(null);
+  
+  // Use refs to prevent infinite loops
+  const isInitializingRef = useRef(false);
+  const lastHopDongRef = useRef<string>('');
+  const lastThangNamRef = useRef<{ thang: number; nam: number }>({ thang: 0, nam: 0 });
 
   useEffect(() => {
     // Tự động sinh mã hóa đơn khi trang load
-    setFormData(prev => ({ ...prev, maHoaDon: generateInvoiceCode() }));
-    setLoading(false);
-  }, [dataLoading]);
+    if (!dataLoading && !formData.maHoaDon) {
+      setFormData(prev => ({ ...prev, maHoaDon: generateInvoiceCode() }));
+      setLoading(false);
+    }
+  }, [dataLoading, formData.maHoaDon]);
 
-  const fetchLatestElectricityReading = async (hopDongId: string, thang: number, nam: number) => {
+  const fetchLatestElectricityReading = useCallback(async (hopDongId: string, thang: number, nam: number) => {
     try {
       const response = await fetch(`/api/hoa-don/latest-reading?hopDong=${hopDongId}&thang=${thang}&nam=${nam}`);
       if (response.ok) {
@@ -133,11 +140,12 @@ export default function ThemMoiHoaDonPage() {
     } catch (error) {
       console.error('Error fetching latest electricity reading:', error);
     }
-  };
+  }, []);
 
-  // Auto-fill form data when contract is selected
+  // Auto-fill form data when contract is selected (only once per contract change)
   useEffect(() => {
-    if (formData.hopDong) {
+    if (formData.hopDong && formData.hopDong !== lastHopDongRef.current) {
+      lastHopDongRef.current = formData.hopDong;
       const selectedHopDong = hopDongList.find(hd => hd._id === formData.hopDong);
       if (selectedHopDong) {
         console.log('Auto-filling form data from contract:', selectedHopDong);
@@ -151,20 +159,24 @@ export default function ThemMoiHoaDonPage() {
           chiSoDienBanDau: 0,
           chiSoNuocBanDau: 0,
         }));
-        
+      }
+    }
+  }, [formData.hopDong, hopDongList]);
+
+  // Tự động cập nhật chỉ số khi thay đổi tháng/năm (only when thang/nam actually changes)
+  useEffect(() => {
+    if (formData.hopDong && formData.thang && formData.nam) {
+      const thangNamKey = `${formData.thang}-${formData.nam}`;
+      const lastKey = `${lastThangNamRef.current.thang}-${lastThangNamRef.current.nam}`;
+      
+      if (thangNamKey !== lastKey || formData.hopDong !== lastHopDongRef.current) {
+        lastThangNamRef.current = { thang: formData.thang, nam: formData.nam };
         fetchLatestElectricityReading(formData.hopDong, formData.thang, formData.nam);
       }
     }
-  }, [formData.hopDong, hopDongList, formData.thang, formData.nam]);
+  }, [formData.thang, formData.nam, formData.hopDong, fetchLatestElectricityReading]);
 
-  // Tự động cập nhật chỉ số khi thay đổi tháng/năm
-  useEffect(() => {
-    if (formData.hopDong && (formData.thang || formData.nam)) {
-      fetchLatestElectricityReading(formData.hopDong, formData.thang, formData.nam);
-    }
-  }, [formData.thang, formData.nam]);
-
-  const calculateTotal = () => {
+  const calculateTotal = useCallback(() => {
     const totalPhiDichVu = formData.phiDichVu.reduce((sum: number, phi) => sum + phi.gia, 0);
     
     const soDien = formData.chiSoDienCuoiKy - formData.chiSoDienBanDau;
@@ -189,11 +201,11 @@ export default function ThemMoiHoaDonPage() {
       tongTien: total,
       conLai: conLai
     }));
-  };
+  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, formData.phiDichVu, formData.daThanhToan, formData.hopDong, hopDongList]);
 
   useEffect(() => {
     calculateTotal();
-  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, formData.phiDichVu, formData.daThanhToan, formData.hopDong, hopDongList]);
+  }, [calculateTotal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
