@@ -526,8 +526,8 @@ function KhachThueForm({
     
     try {
       // Step 1: Upload CCCD images if they are File objects
-      let matTruocUrl: string = typeof formData.anhCCCD.matTruoc === 'string' ? formData.anhCCCD.matTruoc : '';
-      let matSauUrl: string = typeof formData.anhCCCD.matSau === 'string' ? formData.anhCCCD.matSau : '';
+      let matTruocUrl = formData.anhCCCD.matTruoc;
+      let matSauUrl = formData.anhCCCD.matSau;
 
       // Upload matTruoc if it's a File
       if (formData.anhCCCD.matTruoc instanceof File) {
@@ -546,14 +546,17 @@ function KhachThueForm({
           throw new Error(result.message || 'Lỗi upload ảnh CCCD mặt trước');
         }
 
-        // Extract URL from response - handle different response formats
-        const uploadedUrl = result.data?.secure_url || result.data?.url || result.secure_url || result.url;
-        if (!uploadedUrl || typeof uploadedUrl !== 'string') {
-          console.error('Upload response:', result);
-          throw new Error('Không nhận được URL ảnh CCCD mặt trước từ server');
+        // Handle different response formats
+        if (Array.isArray(result.data)) {
+          matTruocUrl = result.data[0]?.secure_url || result.data[0]?.url;
+        } else {
+          matTruocUrl = result.data?.secure_url || result.data?.url || result.secure_url || result.url;
         }
         
-        matTruocUrl = uploadedUrl;
+        if (!matTruocUrl) {
+          console.error('Upload response:', result);
+          throw new Error('Không nhận được URL ảnh CCCD mặt trước');
+        }
         console.log('✅ Uploaded matTruoc URL:', matTruocUrl);
         toast.success('Upload ảnh CCCD mặt trước thành công!');
       }
@@ -575,14 +578,17 @@ function KhachThueForm({
           throw new Error(result.message || 'Lỗi upload ảnh CCCD mặt sau');
         }
 
-        // Extract URL from response - handle different response formats
-        const uploadedUrl = result.data?.secure_url || result.data?.url || result.secure_url || result.url;
-        if (!uploadedUrl || typeof uploadedUrl !== 'string') {
-          console.error('Upload response:', result);
-          throw new Error('Không nhận được URL ảnh CCCD mặt sau từ server');
+        // Handle different response formats
+        if (Array.isArray(result.data)) {
+          matSauUrl = result.data[0]?.secure_url || result.data[0]?.url;
+        } else {
+          matSauUrl = result.data?.secure_url || result.data?.url || result.secure_url || result.url;
         }
         
-        matSauUrl = uploadedUrl;
+        if (!matSauUrl) {
+          console.error('Upload response:', result);
+          throw new Error('Không nhận được URL ảnh CCCD mặt sau');
+        }
         console.log('✅ Uploaded matSau URL:', matSauUrl);
         toast.success('Upload ảnh CCCD mặt sau thành công!');
       }
@@ -639,13 +645,15 @@ function KhachThueForm({
       const url = khachThue ? `/api/khach-thue/${khachThue._id}` : '/api/khach-thue';
       const method = khachThue ? 'PUT' : 'POST';
 
-      // Ensure URLs are strings
-      const finalMatTruocUrl = typeof matTruocUrl === 'string' ? matTruocUrl : '';
-      const finalMatSauUrl = typeof matSauUrl === 'string' ? matSauUrl : '';
-
+      // Ensure URLs are strings (not File objects)
+      const finalMatTruocUrl = typeof matTruocUrl === 'string' ? matTruocUrl : (matTruocUrl || '');
+      const finalMatSauUrl = typeof matSauUrl === 'string' ? matSauUrl : (matSauUrl || '');
+      
       console.log('📤 Submitting with CCCD URLs:', {
         matTruoc: finalMatTruocUrl,
-        matSau: finalMatSauUrl
+        matSau: finalMatSauUrl,
+        originalMatTruoc: formData.anhCCCD.matTruoc,
+        originalMatSau: formData.anhCCCD.matSau
       });
 
       // Chỉ gửi matKhau khi nó được nhập
@@ -670,22 +678,13 @@ function KhachThueForm({
 
       if (response.ok) {
         const result = await response.json();
-        console.log('📥 API Response:', result);
-        
         if (result.success) {
-          // Verify response includes anhCCCD
-          if (result.data && result.data.anhCCCD) {
-            console.log('✅ Response includes anhCCCD:', result.data.anhCCCD);
-          } else {
-            console.warn('⚠️ Response missing anhCCCD:', result.data);
-          }
           onSuccess(result.data);
         } else {
           toast.error(result.message || 'Có lỗi xảy ra');
         }
       } else {
         const error = await response.json();
-        console.error('❌ API Error:', error);
         toast.error(error.message || 'Có lỗi xảy ra');
       }
     } catch (error) {

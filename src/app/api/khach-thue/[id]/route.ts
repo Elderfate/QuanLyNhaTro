@@ -122,18 +122,18 @@ export async function PUT(
     const oldAnhCCCD = existingKhachThue.anhCCCD || { matTruoc: '', matSau: '' };
     const newAnhCCCD = validatedData.anhCCCD || { matTruoc: '', matSau: '' };
     
-    // Normalize URLs - ensure they're strings and not empty
-    const normalizedNewAnhCCCD = {
-      matTruoc: (newAnhCCCD.matTruoc && typeof newAnhCCCD.matTruoc === 'string' && newAnhCCCD.matTruoc.trim()) ? newAnhCCCD.matTruoc.trim() : '',
-      matSau: (newAnhCCCD.matSau && typeof newAnhCCCD.matSau === 'string' && newAnhCCCD.matSau.trim()) ? newAnhCCCD.matSau.trim() : ''
-    };
+    console.log('📸 CCCD Image Update:', {
+      oldAnhCCCD,
+      newAnhCCCD,
+      validatedDataAnhCCCD: validatedData.anhCCCD
+    });
     
     const deletedImageUrls: string[] = [];
     
-    if (oldAnhCCCD.matTruoc && oldAnhCCCD.matTruoc !== normalizedNewAnhCCCD.matTruoc && normalizedNewAnhCCCD.matTruoc === '') {
+    if (oldAnhCCCD.matTruoc && oldAnhCCCD.matTruoc !== newAnhCCCD.matTruoc) {
       deletedImageUrls.push(oldAnhCCCD.matTruoc);
     }
-    if (oldAnhCCCD.matSau && oldAnhCCCD.matSau !== normalizedNewAnhCCCD.matSau && normalizedNewAnhCCCD.matSau === '') {
+    if (oldAnhCCCD.matSau && oldAnhCCCD.matSau !== newAnhCCCD.matSau) {
       deletedImageUrls.push(oldAnhCCCD.matSau);
     }
     
@@ -153,14 +153,20 @@ export async function PUT(
       ten: validatedData.hoTen,
       hoTen: validatedData.hoTen,
       ngaySinh: validatedData.ngaySinh,
-      anhCCCD: normalizedNewAnhCCCD, // Use normalized URLs
+      anhCCCD: {
+        matTruoc: newAnhCCCD.matTruoc || '',
+        matSau: newAnhCCCD.matSau || ''
+      },
       soCCCD: validatedData.cccd,
       cccd: validatedData.cccd,
       updatedAt: new Date().toISOString(),
       ngayCapNhat: new Date().toISOString(),
     };
     
-    console.log('📝 Updating khach thue with anhCCCD:', normalizedNewAnhCCCD);
+    console.log('💾 Update data with anhCCCD:', {
+      matTruoc: updateData.anhCCCD.matTruoc,
+      matSau: updateData.anhCCCD.matSau
+    });
 
     // Nếu có mật khẩu mới, hash password
     if (validatedData.matKhau) {
@@ -187,6 +193,13 @@ export async function PUT(
       ...khachThue,
       anhCCCD: khachThue.anhCCCD || { matTruoc: '', matSau: '' }
     };
+    
+    console.log('✅ Response data with anhCCCD:', {
+      matTruoc: responseData.anhCCCD?.matTruoc,
+      matSau: responseData.anhCCCD?.matSau,
+      hasMatTruoc: !!responseData.anhCCCD?.matTruoc,
+      hasMatSau: !!responseData.anhCCCD?.matSau
+    });
 
     return NextResponse.json({
       success: true,

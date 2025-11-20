@@ -118,40 +118,36 @@ export default function ThemMoiHopDongPage() {
   const [openKhachThue, setOpenKhachThue] = useState(false);
   const [openNguoiDaiDien, setOpenNguoiDaiDien] = useState(false);
 
-  // Filter tenants by selected room (based on active contracts)
-  const getTenantsForRoom = (roomId: string): KhachThue[] => {
-    if (!roomId) return [];
-    
-    // Get active contracts for this room
+  // Filter tenants: show only tenants who are NOT currently renting (chuaThue)
+  // When creating a new contract, we want to assign a room to a tenant who doesn't have a room yet
+  const khachThueList = useMemo(() => {
+    // Get all tenants who are currently renting (have active contracts)
     const now = new Date();
-    const activeContracts = allHopDong.filter((hd: any) => {
+    const activeContractTenantIds = new Set<string>();
+    
+    allHopDong.forEach((hd: any) => {
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
-      return phongId === roomId &&
-             hd.trangThai === 'hoatDong' &&
-             ngayBatDau && ngayBatDau <= now &&
-             ngayKetThuc && ngayKetThuc >= now;
+      
+      if (hd.trangThai === 'hoatDong' &&
+          ngayBatDau && ngayBatDau <= now &&
+          ngayKetThuc && ngayKetThuc >= now) {
+        const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [];
+        khachThueIds.forEach((id: string) => {
+          if (id) activeContractTenantIds.add(id);
+        });
+      }
     });
     
-    // Extract tenant IDs from active contracts
-    const tenantIds = new Set<string>();
-    activeContracts.forEach((hd: any) => {
-      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [];
-      khachThueIds.forEach((id: string) => {
-        if (id) tenantIds.add(id);
-      });
+    // Return tenants who are NOT in active contracts (chuaThue status or not renting)
+    return allKhachThue.filter((kt: KhachThue) => {
+      // Filter out tenants who are already renting
+      const isRenting = activeContractTenantIds.has(kt._id!);
+      // Also check trangThai to be safe
+      const isChuaThue = kt.trangThai === 'chuaThue' || kt.trangThai === 'chuaThue';
+      return !isRenting && isChuaThue;
     });
-    
-    // Return tenants that are in active contracts for this room
-    return allKhachThue.filter((kt: KhachThue) => tenantIds.has(kt._id!));
-  };
-  
-  const khachThueList = useMemo(() => {
-    return formData.phong 
-      ? getTenantsForRoom(formData.phong)
-      : allKhachThue;
-  }, [formData.phong, allHopDong, allKhachThue]);
+  }, [allHopDong, allKhachThue]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', {
@@ -476,47 +472,79 @@ export default function ThemMoiHopDongPage() {
 
             <div className="space-y-2">
               <Label className="text-xs md:text-sm">Khách thuê</Label>
-              {!formData.phong ? (
-                <div className="p-3 border rounded-md bg-gray-50 text-sm text-muted-foreground">
-                  Vui lòng chọn phòng trước
-                </div>
-              ) : khachThueList.length === 0 ? (
-                <div className="p-3 border rounded-md bg-gray-50 text-sm text-muted-foreground text-center">
-                  Không có khách thuê nào đang thuê phòng này
-                </div>
-              ) : (
-                <div className="border rounded-md p-3 max-h-64 overflow-y-auto space-y-2">
-                  {khachThueList.map((khachThue) => (
-                    <div
-                      key={khachThue._id}
-                      className="flex items-center space-x-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer"
-                      onClick={() => toggleKhachThue(khachThue._id!)}
-                    >
-                      <div className={cn(
-                        "flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                        formData.khachThueId.includes(khachThue._id!)
-                          ? "bg-primary text-primary-foreground"
-                          : "opacity-50"
-                      )}>
-                        {formData.khachThueId.includes(khachThue._id!) && (
-                          <Check className="h-3 w-3" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium">{khachThue.hoTen}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {khachThue.soDienThoai} {khachThue.email ? `• ${khachThue.email}` : ''}
-                        </div>
-                      </div>
+              <Popover open={openKhachThue} onOpenChange={setOpenKhachThue}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openKhachThue}
+                    className="w-full justify-between min-h-10 h-auto text-sm"
+                    size="sm"
+                    disabled={!formData.phong}
+                  >
+                    <div className="flex flex-wrap gap-1 text-xs md:text-sm">
+                      {!formData.phong ? (
+                        <span className="text-muted-foreground">Chọn phòng trước</span>
+                      ) : formData.khachThueId.length === 0 ? (
+                        <span className="text-muted-foreground">Chọn khách thuê...</span>
+                      ) : (
+                        formData.khachThueId.map((id) => {
+                          const khachThue = khachThueList.find(k => k._id === id);
+                          return (
+                            <Badge key={id} variant="secondary" className="mr-1">
+                              {khachThue?.hoTen}
+                            </Badge>
+                          );
+                        })
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-              {formData.phong && khachThueList.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Đã chọn {formData.khachThueId.length} khách thuê
-                </p>
-              )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                  <PopoverContent className="w-[90vw] md:w-full p-0">
+                    <Command>
+                      <CommandInput placeholder="Tìm kiếm khách thuê..." className="text-sm" />
+                      <CommandEmpty className="text-sm">
+                        {formData.phong 
+                          ? "Không tìm thấy khách thuê cho phòng này." 
+                          : "Vui lòng chọn phòng trước."}
+                      </CommandEmpty>
+                      <CommandGroup className="max-h-64 overflow-auto">
+                      {khachThueList.length === 0 && formData.phong ? (
+                        <div className="p-4 text-sm text-muted-foreground text-center">
+                          Không có khách thuê nào đang thuê phòng này
+                        </div>
+                      ) : (
+                        khachThueList.map((khachThue) => (
+                        <CommandItem
+                          key={khachThue._id}
+                          value={khachThue.hoTen}
+                          onSelect={() => toggleKhachThue(khachThue._id!)}
+                        >
+                          <div className="flex items-center space-x-2 w-full">
+                            <div className={cn(
+                              "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                              formData.khachThueId.includes(khachThue._id!)
+                                ? "bg-primary text-primary-foreground"
+                                : "opacity-50 [&_svg]:invisible"
+                            )}>
+                              <Check className="h-4 w-4" />
+                            </div>
+                            <span>{khachThue.hoTen}</span>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {khachThue.soDienThoai}
+                            </span>
+                          </div>
+                        </CommandItem>
+                      ))
+                      )}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground">
+                Đã chọn {formData.khachThueId.length} khách thuê
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
