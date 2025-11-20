@@ -174,7 +174,11 @@ export default function KhachThuePage() {
               khachThue={editingKhachThue}
               onClose={() => setIsDialogOpen(false)}
               onSuccess={(newKhachThue) => {
+                // Invalidate both specific and app-data queries to ensure fresh data
                 queryClient.invalidateQueries({ queryKey: ['khach-thue'] });
+                queryClient.invalidateQueries({ queryKey: ['app-data'] });
+                // Refetch immediately to get updated data
+                refetch();
                 setIsDialogOpen(false);
                 toast.success(editingKhachThue ? 'Cập nhật khách thuê thành công!' : 'Thêm khách thuê thành công!');
               }}

@@ -14,10 +14,24 @@ export async function GET() {
 
     const users = await NguoiDungGS.find();
     
+    // Log all users for debugging
+    console.log(`[Users API] Total users found: ${users.length}`);
+    users.forEach((user: any, index: number) => {
+      console.log(`[Users API] User ${index + 1}:`, {
+        _id: user._id,
+        email: user.email,
+        vaiTro: user.vaiTro,
+        role: user.role,
+        ten: user.ten,
+        name: user.name
+      });
+    });
+    
     // Filter out tenants (khachThue) - only return admins, landlords (chuNha), and staff (nhanVien)
     const filteredUsers = users.filter((user: any) => {
-      const vaiTro = user.vaiTro || user.role || '';
-      return vaiTro !== 'khachThue' && vaiTro !== 'tenant';
+      const vaiTro = (user.vaiTro || user.role || '').toLowerCase();
+      const isTenant = vaiTro === 'khachthue' || vaiTro === 'khachthue' || vaiTro === 'tenant';
+      return !isTenant;
     });
     
     // Remove password fields and sort by createdAt
@@ -33,11 +47,10 @@ export async function GET() {
       });
     
     // Log for debugging
-    console.log(`[Users API] Total users found: ${users.length}`);
     console.log(`[Users API] Filtered users (excluding tenants): ${filteredUsers.length}`);
     console.log(`[Users API] Returning ${usersWithoutPassword.length} users (after password removal)`);
     console.log(`[Users API] Admin users:`, usersWithoutPassword.filter((u: any) => 
-      u.role === 'admin' || u.vaiTro === 'admin'
+      (u.role || u.vaiTro || '').toLowerCase() === 'admin'
     ).length);
     console.log(`[Users API] Sample user:`, usersWithoutPassword[0] ? {
       _id: usersWithoutPassword[0]._id,
@@ -46,8 +59,11 @@ export async function GET() {
       vaiTro: usersWithoutPassword[0].vaiTro,
     } : 'No users');
     
-    // Return as array, not object
-    return NextResponse.json(Array.isArray(usersWithoutPassword) ? usersWithoutPassword : []);
+    // Return in the format expected by apiClient (wrapped in data property)
+    return NextResponse.json({
+      success: true,
+      data: usersWithoutPassword
+    }, { status: 200 });
   } catch (error) {
     console.error('Error fetching users:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

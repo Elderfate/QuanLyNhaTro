@@ -707,20 +707,39 @@ export default function XemPhongPage() {
                   </p>
                 )}
                 
-                {phong.tienNghi && phong.tienNghi.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-3 md:mb-4">
-                    {phong.tienNghi.slice(0, 3).map((tienNghi) => (
-                      <Badge key={tienNghi} variant="outline" className="text-[10px] md:text-xs">
-                        {tienNghiLabels[tienNghi as keyof typeof tienNghiLabels] || tienNghi}
-                      </Badge>
-                    ))}
-                    {phong.tienNghi.length > 3 && (
-                      <Badge variant="outline" className="text-[10px] md:text-xs">
-                        +{phong.tienNghi.length - 3}
-                      </Badge>
-                    )}
-                  </div>
-                )}
+                {(() => {
+                  // Normalize tienNghi to always be an array
+                  let tienNghiArray: string[] = [];
+                  if (Array.isArray(phong.tienNghi)) {
+                    tienNghiArray = phong.tienNghi;
+                  } else if (typeof phong.tienNghi === 'string' && phong.tienNghi.trim()) {
+                    // If it's a string, try to parse it or split by comma
+                    try {
+                      const parsed = JSON.parse(phong.tienNghi);
+                      tienNghiArray = Array.isArray(parsed) ? parsed : [phong.tienNghi];
+                    } catch {
+                      // If parsing fails, split by comma or use as single item
+                      tienNghiArray = phong.tienNghi.includes(',') 
+                        ? phong.tienNghi.split(',').map(s => s.trim()).filter(s => s)
+                        : [phong.tienNghi];
+                    }
+                  }
+                  
+                  return tienNghiArray.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3 md:mb-4">
+                      {tienNghiArray.slice(0, 3).map((tienNghi) => (
+                        <Badge key={tienNghi} variant="outline" className="text-[10px] md:text-xs">
+                          {tienNghiLabels[tienNghi as keyof typeof tienNghiLabels] || tienNghi}
+                        </Badge>
+                      ))}
+                      {tienNghiArray.length > 3 && (
+                        <Badge variant="outline" className="text-[10px] md:text-xs">
+                          +{tienNghiArray.length - 3}
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <Button 
                   size="sm"

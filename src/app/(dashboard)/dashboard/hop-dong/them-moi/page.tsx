@@ -48,11 +48,17 @@ export default function ThemMoiHopDongPage() {
   const [openToaNha, setOpenToaNha] = useState(false);
   
   // Filter rooms by selected building
+  // Normalize toaNha comparison to handle both string and object types
   const phongList = selectedToaNha
-    ? allPhong.filter((phong: Phong) => 
-        phong.toaNha === selectedToaNha && 
-        (phong.trangThai === 'trong' || phong.trangThai === 'daDat')
-      )
+    ? allPhong.filter((phong: Phong) => {
+        // Extract toaNha ID - handle both string and object types
+        const phongToaNhaId = typeof phong.toaNha === 'object' && phong.toaNha !== null
+          ? (phong.toaNha as any)._id || (phong.toaNha as any).id
+          : phong.toaNha;
+        
+        return phongToaNhaId === selectedToaNha && 
+               (phong.trangThai === 'trong' || phong.trangThai === 'daDat');
+      })
     : allPhong.filter((phong: Phong) => 
         phong.trangThai === 'trong' || phong.trangThai === 'daDat'
       );
