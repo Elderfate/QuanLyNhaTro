@@ -1,7 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { ChiSoDienNuocGS, PhongGS, NguoiDungGS } from '@/lib/googlesheets-models';
+import {
+  successResponse,
+  unauthorizedResponse,
+  validationErrorResponse,
+  serverErrorResponse,
+  badRequestResponse,
+  forbiddenResponse,
+} from '@/lib/api-response';
+import { normalizeId, compareIds } from '@/lib/id-utils';
+import { withRetry } from '@/lib/retry-utils';
 import { z } from 'zod';
 
 const chiSoSchema = z.object({
@@ -22,10 +32,7 @@ export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { searchParams } = new URL(request.url);
@@ -36,24 +43,29 @@ export async function GET(request: NextRequest) {
     const nam = searchParams.get('nam') || '';
 
     // Get all chi so and filter client-side
-    let allChiSo = await ChiSoDienNuocGS.find();
+    let allChiSo = await withRetry(() => ChiSoDienNuocGS.find());
     
-    if (phong) {
-      allChiSo = allChiSo.filter((cs: any) => cs.phong === phong);
+    const normalizedPhongId = phong ? normalizeId(phong) : null;
+    if (normalizedPhongId) {
+      allChiSo = allChiSo.filter((cs) => compareIds(cs.phong, normalizedPhongId));
     }
     
     if (thang) {
-      allChiSo = allChiSo.filter((cs: any) => cs.thang === parseInt(thang));
+      const thangNum = parseInt(thang);
+      allChiSo = allChiSo.filter((cs) => (cs as { thang?: number }).thang === thangNum);
     }
     
     if (nam) {
-      allChiSo = allChiSo.filter((cs: any) => cs.nam === parseInt(nam));
+      const namNum = parseInt(nam);
+      allChiSo = allChiSo.filter((cs) => (cs as { nam?: number }).nam === namNum);
     }
 
     // Sort by nam, thang
-    allChiSo.sort((a: any, b: any) => {
-      if (b.nam !== a.nam) return b.nam - a.nam;
-      return b.thang - a.thang;
+    allChiSo.sort((a, b) => {
+      const aDoc = a as { nam?: number; thang?: number };
+      const bDoc = b as { nam?: number; thang?: number };
+      if (bDoc.nam !== aDoc.nam) return (bDoc.nam || 0) - (aDoc.nam || 0);
+      return (bDoc.thang || 0) - (aDoc.thang || 0);
     });
 
     const total = allChiSo.length;
@@ -61,8 +73,9 @@ export async function GET(request: NextRequest) {
 
     // Populate relationships
     for (const chiSo of chiSoList) {
-      if (chiSo.phong) {
-        const phongData = await PhongGS.findById(chiSo.phong);
+      const phongId = normalizeId(chiSo.phong);
+      if (phongId) {
+        const phongData = await withRetry(() => PhongGS.findById(phongId));
         chiSo.phong = phongData ? {
           _id: phongData._id,
           maPhong: phongData.maPhong,
@@ -70,33 +83,26 @@ export async function GET(request: NextRequest) {
         } : null;
       }
       
-      if (chiSo.nguoiGhi) {
-        const nguoiGhi = await NguoiDungGS.findById(chiSo.nguoiGhi);
+      const nguoiGhiId = normalizeId(chiSo.nguoiGhi);
+      if (nguoiGhiId) {
+        const nguoiGhi = await withRetry(() => NguoiDungGS.findById(nguoiGhiId));
         chiSo.nguoiGhi = nguoiGhi ? {
           _id: nguoiGhi._id,
-          ten: nguoiGhi.ten,
-          email: nguoiGhi.email
+          ten: (nguoiGhi as { ten?: string }).ten || '',
+          email: (nguoiGhi as { email?: string }).email || ''
         } : null;
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      data: chiSoList,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+    return successResponse(chiSoList, undefined, 200, {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     });
 
   } catch (error) {
-    console.error('Error fetching chi so dien nuoc:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi lấy danh sách chỉ số điện nước');
   }
 }
 
@@ -105,89 +111,79 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const body = await request.json();
-    const validatedData = chiSoSchema.parse(body);
+    let validatedData;
+    try {
+      validatedData = chiSoSchema.parse(body);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return validationErrorResponse(error);
+      }
+      throw error;
+    }
 
     // Check if phong exists
-    const phong = await PhongGS.findById(validatedData.phong);
+    const normalizedPhongId = normalizeId(validatedData.phong);
+    if (!normalizedPhongId) {
+      return badRequestResponse('ID phòng không hợp lệ');
+    }
+    
+    const phong = await withRetry(() => PhongGS.findById(normalizedPhongId));
     if (!phong) {
-      return NextResponse.json(
-        { message: 'Phòng không tồn tại' },
-        { status: 400 }
-      );
+      return badRequestResponse('Phòng không tồn tại');
     }
 
     // Check if chi so already exists for this phong, thang, nam
-    const allChiSo = await ChiSoDienNuocGS.find();
-    const existingChiSo = allChiSo.find((cs: any) => 
-      cs.phong === validatedData.phong &&
-      cs.thang === validatedData.thang &&
-      cs.nam === validatedData.nam
-    );
+    const allChiSo = await withRetry(() => ChiSoDienNuocGS.find());
+    const existingChiSo = allChiSo.find((cs) => {
+      const csPhongId = normalizeId(cs.phong);
+      return compareIds(csPhongId, normalizedPhongId) &&
+             (cs as { thang?: number }).thang === validatedData.thang &&
+             (cs as { nam?: number }).nam === validatedData.nam;
+    });
 
     if (existingChiSo) {
-      return NextResponse.json(
-        { message: 'Chỉ số đã được ghi cho phòng này trong tháng này' },
-        { status: 400 }
-      );
+      return badRequestResponse('Chỉ số đã được ghi cho phòng này trong tháng này');
     }
 
     // Validate chi so moi >= chi so cu
     if (validatedData.chiSoDienMoi < validatedData.chiSoDienCu) {
-      return NextResponse.json(
-        { message: 'Chỉ số điện mới phải lớn hơn hoặc bằng chỉ số cũ' },
-        { status: 400 }
-      );
+      return badRequestResponse('Chỉ số điện mới phải lớn hơn hoặc bằng chỉ số cũ');
     }
 
     if (validatedData.chiSoNuocMoi < validatedData.chiSoNuocCu) {
-      return NextResponse.json(
-        { message: 'Chỉ số nước mới phải lớn hơn hoặc bằng chỉ số cũ' },
-        { status: 400 }
-      );
+      return badRequestResponse('Chỉ số nước mới phải lớn hơn hoặc bằng chỉ số cũ');
     }
 
     // Calculate soKwh and soKhoi
     const soKwh = validatedData.chiSoDienMoi - validatedData.chiSoDienCu;
     const soKhoi = validatedData.chiSoNuocMoi - validatedData.chiSoNuocCu;
 
-    const newChiSo = await ChiSoDienNuocGS.create({
+    const userId = session.user?.id;
+    if (!userId) {
+      return unauthorizedResponse();
+    }
+
+    const newChiSo = await withRetry(() => ChiSoDienNuocGS.create({
       _id: `chiso_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       ...validatedData,
-      nguoiGhi: session.user.id,
+      phong: normalizedPhongId,
+      nguoiGhi: userId,
       soKwh,
       soKhoi,
       ngayGhi: validatedData.ngayGhi || new Date().toISOString(),
       hinhAnhChiSo: validatedData.anhChiSoDien || validatedData.anhChiSoNuoc || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }));
 
-    return NextResponse.json({
-      success: true,
-      data: newChiSo,
-      message: 'Chỉ số điện nước đã được ghi thành công',
-    }, { status: 201 });
+    return successResponse(newChiSo, 'Chỉ số điện nước đã được ghi thành công', 201);
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { message: error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating chi so dien nuoc:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi tạo chỉ số điện nước');
   }
 }
 
@@ -196,50 +192,35 @@ export async function DELETE(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      return unauthorizedResponse();
     }
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json(
-        { message: 'ID là bắt buộc' },
-        { status: 400 }
-      );
+      return badRequestResponse('ID là bắt buộc');
     }
 
-    const chiSo = await ChiSoDienNuocGS.findById(id);
+    const chiSo = await withRetry(() => ChiSoDienNuocGS.findById(id));
     if (!chiSo) {
-      return NextResponse.json(
-        { message: 'Chỉ số điện nước không tồn tại' },
-        { status: 404 }
-      );
+      return notFoundResponse('Chỉ số điện nước không tồn tại');
     }
 
     // Check if user has permission to delete (only admin or the person who recorded it)
-    if (chiSo.nguoiGhi !== session.user.id && session.user.role !== 'admin') {
-      return NextResponse.json(
-        { message: 'Bạn không có quyền xóa chỉ số này' },
-        { status: 403 }
-      );
+    const nguoiGhiId = normalizeId(chiSo.nguoiGhi);
+    const userId = session.user?.id;
+    const userRole = session.user?.role;
+    
+    if (!compareIds(nguoiGhiId, userId) && userRole !== 'admin') {
+      return forbiddenResponse('Bạn không có quyền xóa chỉ số này');
     }
 
-    await ChiSoDienNuocGS.findByIdAndDelete(id);
+    await withRetry(() => ChiSoDienNuocGS.findByIdAndDelete(id));
 
-    return NextResponse.json({
-      success: true,
-      message: 'Chỉ số điện nước đã được xóa thành công',
-    });
+    return successResponse(null, 'Chỉ số điện nước đã được xóa thành công');
 
   } catch (error) {
-    console.error('Error deleting chi so dien nuoc:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    return serverErrorResponse(error, 'Lỗi khi xóa chỉ số điện nước');
   }
 }

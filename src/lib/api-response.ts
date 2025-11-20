@@ -23,13 +23,20 @@ export interface StandardApiResponse<T = unknown> {
 export function successResponse<T>(
   data: T,
   message?: string,
-  status: number = 200
-): NextResponse<StandardApiResponse<T>> {
+  status: number = 200,
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages?: number;
+  }
+): NextResponse<StandardApiResponse<T> & { pagination?: typeof pagination }> {
   return NextResponse.json(
     {
       success: true,
       data,
       ...(message && { message }),
+      ...(pagination && { pagination }),
     },
     { status }
   );
