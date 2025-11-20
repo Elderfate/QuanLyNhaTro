@@ -147,6 +147,35 @@ function populateRelationships(
              ngayKetThuc && ngayKetThuc >= now;
     });
     
+    // Tính toán lại trạng thái dựa trên hợp đồng hiện tại
+    let calculatedStatus = p.trangThai;
+    if (hopDongHienTai) {
+      // Có hợp đồng đang hoạt động -> phải là 'dangThue'
+      if (p.trangThai !== 'dangThue') {
+        console.log(`⚠️ Phong ${p.maPhong} (${p._id}) has active contract but status is ${p.trangThai}, correcting to 'dangThue'`);
+        calculatedStatus = 'dangThue';
+      }
+    } else {
+      // Không có hợp đồng đang hoạt động
+      // Nếu trạng thái là 'dangThue' nhưng không có hợp đồng -> có thể là 'trong'
+      if (p.trangThai === 'dangThue') {
+        // Kiểm tra lại xem có hợp đồng nào không (kể cả chưa bắt đầu)
+        const hasAnyContract = hopDong.some((hd: any) => {
+          const pId = String(p._id);
+          let phongIdFromHd = hd.phong;
+          if (typeof phongIdFromHd === 'object' && phongIdFromHd !== null) {
+            phongIdFromHd = phongIdFromHd._id || phongIdFromHd.id || phongIdFromHd;
+          }
+          return String(phongIdFromHd) === pId && hd.trangThai === 'hoatDong';
+        });
+        
+        if (!hasAnyContract) {
+          console.log(`⚠️ Phong ${p.maPhong} (${p._id}) has status 'dangThue' but no contract, correcting to 'trong'`);
+          calculatedStatus = 'trong';
+        }
+      }
+    }
+    
     // Populate hopDongHienTai nếu có
     let hopDongHienTaiPopulated = null;
     if (hopDongHienTai) {
@@ -189,6 +218,7 @@ function populateRelationships(
     
     return {
       ...p,
+      trangThai: calculatedStatus, // Sử dụng trạng thái đã tính toán lại
       toaNha: toaNhaData
         ? {
             _id: toaNhaData._id,
