@@ -177,6 +177,11 @@ export default function ThemMoiHoaDonPage() {
   }, [formData.thang, formData.nam, formData.hopDong, fetchLatestElectricityReading]);
 
   const calculateTotal = useCallback(() => {
+    // Prevent infinite loops by checking if we're already calculating
+    if (isInitializingRef.current) {
+      return;
+    }
+    
     setFormData(prev => {
       try {
         // Đảm bảo phiDichVu luôn là array
@@ -239,9 +244,31 @@ export default function ThemMoiHoaDonPage() {
     return phiDichVuArray.map(p => `${p.ten}-${p.gia}`).join(',');
   }, [formData.phiDichVu]);
   
+  // Calculate total only when specific values change, avoid infinite loop
   useEffect(() => {
-    calculateTotal();
-  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, phiDichVuKey, formData.daThanhToan, formData.hopDong, calculateTotal]);
+    // Use a flag to prevent multiple rapid updates
+    if (isInitializingRef.current) {
+      return;
+    }
+    
+    // Debounce calculation to prevent infinite loops
+    const timeoutId = setTimeout(() => {
+      calculateTotal();
+    }, 50);
+    
+    return () => clearTimeout(timeoutId);
+  }, [
+    formData.tienPhong, 
+    formData.chiSoDienBanDau, 
+    formData.chiSoDienCuoiKy, 
+    formData.chiSoNuocBanDau, 
+    formData.chiSoNuocCuoiKy, 
+    phiDichVuKey, 
+    formData.daThanhToan, 
+    formData.hopDong
+  ]);
+  
+  // Remove calculateTotal from dependencies to prevent loop
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

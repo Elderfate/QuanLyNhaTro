@@ -102,14 +102,28 @@ export async function POST(request: NextRequest) {
     // Cập nhật trạng thái phòng và khách thuê SAU KHI hợp đồng đã được tạo
     // Đảm bảo hợp đồng mới đã có trong database trước khi tính toán trạng thái
     // Wait a bit to ensure contract is saved to Google Sheets
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Refresh hopDong data to ensure we have the latest
     console.log(`🔄 Refreshing contract data before status update...`);
     
     // Update phong status - this will fetch fresh contract data
+    // Force update to 'dangThue' since we just created an active contract
     try {
-      await updatePhongStatus(validatedData.phong);
+      const normalizedPhongId = String(validatedData.phong);
+      console.log(`🔄 Force updating phong ${normalizedPhongId} status to 'dangThue'...`);
+      
+      // Directly update to 'dangThue' since we know there's an active contract
+      await PhongGS.findByIdAndUpdate(normalizedPhongId, {
+        trangThai: 'dangThue',
+        updatedAt: new Date().toISOString(),
+        ngayCapNhat: new Date().toISOString(),
+      });
+      
+      console.log(`✅ Directly updated phong ${normalizedPhongId} status to 'dangThue'`);
+      
+      // Also call the calculation function to ensure consistency
+      await updatePhongStatus(normalizedPhongId);
     } catch (error) {
       console.error('Error updating phong status:', error);
       // Continue even if status update fails
@@ -128,11 +142,17 @@ export async function POST(request: NextRequest) {
     setTimeout(async () => {
       try {
         console.log(`🔄 Double-checking phong status after delay...`);
-        await updatePhongStatus(validatedData.phong);
+        const normalizedPhongId = String(validatedData.phong);
+        await PhongGS.findByIdAndUpdate(normalizedPhongId, {
+          trangThai: 'dangThue',
+          updatedAt: new Date().toISOString(),
+          ngayCapNhat: new Date().toISOString(),
+        });
+        await updatePhongStatus(normalizedPhongId);
       } catch (error) {
         console.error('Error in delayed phong status update:', error);
       }
-    }, 1000);
+    }, 2000);
 
     // Cập nhật phòng với thông tin khách thuê (nguoiDaiDien)
     const nguoiDaiDien = allKhachThue.find((kt: any) => kt._id === validatedData.nguoiDaiDien);
