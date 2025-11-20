@@ -135,7 +135,7 @@ export async function PUT(
         tienNghiChung: validatedData.tienNghiChung || [],
         updatedAt: new Date().toISOString(),
         ngayCapNhat: new Date().toISOString(),
-      }, { new: true })
+      })
     ) as ToaNhaDocument | null;
 
     if (!updatedToaNha) {

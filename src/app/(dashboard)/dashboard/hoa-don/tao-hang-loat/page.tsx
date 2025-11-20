@@ -52,6 +52,11 @@ export default function TaoHangLoatHoaDonPage() {
     errors: string[];
   } | null>(null);
 
+  // Ensure arrays are valid - must be declared before useMemo
+  const safeHopDong = Array.isArray(allHopDong) ? allHopDong : [];
+  const safePhong = Array.isArray(allPhong) ? allPhong : [];
+  const safeHoaDon = Array.isArray(allHoaDon) ? allHoaDon : [];
+
   // Get active contracts
   const activeContracts = useMemo(() => {
     if (!Array.isArray(safeHopDong) || safeHopDong.length === 0) return [];
