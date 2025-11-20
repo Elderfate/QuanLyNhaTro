@@ -146,7 +146,7 @@ export default function ThemMoiHopDongPage() {
       // Filter out tenants who are already renting
       const isRenting = activeContractTenantIds.has(kt._id!);
       // Also check trangThai to be safe
-      const isChuaThue = kt.trangThai === 'chuaThue' || kt.trangThai === 'chuaThue';
+      const isChuaThue = kt.trangThai === 'chuaThue';
       return !isRenting && isChuaThue;
     });
   }, [allHopDong, allKhachThue]);
