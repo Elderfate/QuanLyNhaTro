@@ -99,8 +99,16 @@ export async function POST(request: NextRequest) {
 
     // Cập nhật trạng thái phòng và khách thuê SAU KHI hợp đồng đã được tạo
     // Đảm bảo hợp đồng mới đã có trong database trước khi tính toán trạng thái
+    // Wait a bit to ensure contract is saved
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     await updatePhongStatus(validatedData.phong);
     await updateAllKhachThueStatus(validatedData.khachThueId);
+    
+    // Double check - update again after a short delay to ensure status is correct
+    setTimeout(async () => {
+      await updatePhongStatus(validatedData.phong);
+    }, 500);
 
     // Cập nhật phòng với thông tin khách thuê (nguoiDaiDien)
     const nguoiDaiDien = allKhachThue.find((kt: any) => kt._id === validatedData.nguoiDaiDien);

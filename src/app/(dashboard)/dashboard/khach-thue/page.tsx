@@ -179,6 +179,10 @@ export default function KhachThuePage() {
                 queryClient.invalidateQueries({ queryKey: ['app-data'] });
                 // Refetch immediately to get updated data
                 refetch();
+                // Force a small delay to ensure backend has processed
+                setTimeout(() => {
+                  refetch();
+                }, 500);
                 setIsDialogOpen(false);
                 toast.success(editingKhachThue ? 'Cập nhật khách thuê thành công!' : 'Thêm khách thuê thành công!');
               }}

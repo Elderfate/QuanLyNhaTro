@@ -251,8 +251,17 @@ export default function ThemMoiHopDongPage() {
 
       if (response.ok) {
         const result = await response.json();
+        // Invalidate queries để refresh data
+        queryClient.invalidateQueries({ queryKey: ['app-data'] });
+        queryClient.invalidateQueries({ queryKey: ['hop-dong'] });
+        queryClient.invalidateQueries({ queryKey: ['phong'] });
+        queryClient.invalidateQueries({ queryKey: ['khach-thue'] });
+        
         // Xóa cache để force refresh data
         sessionStorage.removeItem('hop-dong-data');
+        sessionStorage.removeItem('phong-data');
+        sessionStorage.removeItem('khach-thue-data');
+        
         toast.success(result.message || 'Đã tạo hợp đồng thành công');
         // Sử dụng replace để không tạo history entry mới
         // và refresh để cập nhật dữ liệu server-side
