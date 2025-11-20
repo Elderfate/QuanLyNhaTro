@@ -136,8 +136,12 @@ function populateRelationships(
     const hopDongHienTai = hopDong.find((hd: any) => {
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
-      return phongId === p._id &&
+      // Normalize phong ID - handle both string and object
+      let phongId = hd.phong;
+      if (typeof phongId === 'object' && phongId !== null) {
+        phongId = phongId._id || phongId.id || phongId;
+      }
+      return String(phongId) === String(p._id) &&
              hd.trangThai === 'hoatDong' &&
              ngayBatDau && ngayBatDau <= now &&
              ngayKetThuc && ngayKetThuc >= now;
@@ -412,10 +416,15 @@ function populateRelationships(
   const khachThueWithHopDong = khachThue.map((kt: any) => {
     // Tìm hợp đồng hiện tại cho khách thuê này
     const hopDongHienTai = hopDong.find((hd: any) => {
-      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [hd.khachThueId];
+      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : (hd.khachThueId ? [hd.khachThueId] : []);
       const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
       const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
-      return (khachThueIds.includes(kt._id) || hd.nguoiDaiDien === kt._id) &&
+      // Normalize IDs for comparison
+      const ktId = String(kt._id);
+      const nguoiDaiDienId = hd.nguoiDaiDien ? String(hd.nguoiDaiDien) : null;
+      const khachThueIdsNormalized = khachThueIds.map((id: any) => String(id));
+      
+      return (khachThueIdsNormalized.includes(ktId) || nguoiDaiDienId === ktId) &&
              hd.trangThai === 'hoatDong' &&
              ngayBatDau && ngayBatDau <= now &&
              ngayKetThuc && ngayKetThuc >= now;

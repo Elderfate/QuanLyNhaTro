@@ -205,9 +205,16 @@ export default function ThemMoiHoaDonPage() {
     });
   }, [hopDongList]);
 
+  // Use a ref to track previous phiDichVu to avoid infinite loops
+  const prevPhiDichVuRef = useRef<string>('');
+  
   useEffect(() => {
+    const phiDichVuKey = JSON.stringify(formData.phiDichVu);
+    if (phiDichVuKey !== prevPhiDichVuRef.current) {
+      prevPhiDichVuRef.current = phiDichVuKey;
+    }
     calculateTotal();
-  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, formData.phiDichVu.length, formData.daThanhToan, formData.hopDong, calculateTotal]);
+  }, [formData.tienPhong, formData.chiSoDienBanDau, formData.chiSoDienCuoiKy, formData.chiSoNuocBanDau, formData.chiSoNuocCuoiKy, prevPhiDichVuRef.current, formData.daThanhToan, formData.hopDong, calculateTotal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -42,6 +43,7 @@ import {
 
 export default function ThemMoiHopDongPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { toaNha: allToaNha, phong: allPhong, khachThue: allKhachThue, hopDong: allHopDong, loading: dataLoading } = useData();
   
   const [selectedToaNha, setSelectedToaNha] = useState<string>('');
