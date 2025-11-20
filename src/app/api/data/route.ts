@@ -127,9 +127,62 @@ function populateRelationships(
     }
   });
 
-  // Populate phong with toaNha
+  // Populate phong with toaNha and hopDongHienTai
+  const now = new Date();
   const phongWithToaNha = phong.map((p: any) => {
     const toaNhaData = p.toaNha ? toaNhaMap.get(p.toaNha) : null;
+    
+    // Tìm hợp đồng hiện tại cho phòng này
+    const hopDongHienTai = hopDong.find((hd: any) => {
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      const phongId = typeof hd.phong === 'object' ? hd.phong._id : hd.phong;
+      return phongId === p._id &&
+             hd.trangThai === 'hoatDong' &&
+             ngayBatDau && ngayBatDau <= now &&
+             ngayKetThuc && ngayKetThuc >= now;
+    });
+    
+    // Populate hopDongHienTai nếu có
+    let hopDongHienTaiPopulated = null;
+    if (hopDongHienTai) {
+      const khachThueIds = Array.isArray(hopDongHienTai.khachThueId) 
+        ? hopDongHienTai.khachThueId 
+        : [hopDongHienTai.khachThueId];
+      
+      const khachThueList = khachThueIds
+        .map((id: string) => khachThueMap.get(id))
+        .filter(Boolean)
+        .map((kt: any) => ({
+          _id: kt._id,
+          hoTen: kt.hoTen || kt.ten,
+          soDienThoai: kt.soDienThoai,
+        }));
+      
+      const nguoiDaiDienData = hopDongHienTai.nguoiDaiDien 
+        ? khachThueMap.get(hopDongHienTai.nguoiDaiDien)
+        : null;
+      
+      hopDongHienTaiPopulated = {
+        ...hopDongHienTai,
+        phong: {
+          _id: p._id,
+          maPhong: p.maPhong,
+          toaNha: toaNhaData ? {
+            _id: toaNhaData._id,
+            tenToaNha: toaNhaData.tenToaNha,
+            diaChi: toaNhaData.diaChi,
+          } : null,
+        },
+        khachThueId: khachThueList,
+        nguoiDaiDien: nguoiDaiDienData ? {
+          _id: nguoiDaiDienData._id,
+          hoTen: nguoiDaiDienData.hoTen || nguoiDaiDienData.ten,
+          soDienThoai: nguoiDaiDienData.soDienThoai,
+        } : null,
+      };
+    }
+    
     return {
       ...p,
       toaNha: toaNhaData
@@ -139,6 +192,7 @@ function populateRelationships(
             diaChi: toaNhaData.diaChi,
           }
         : null,
+      hopDongHienTai: hopDongHienTaiPopulated,
     };
   });
 
@@ -354,10 +408,72 @@ function populateRelationships(
     };
   });
 
+  // Populate khachThue with hopDongHienTai
+  const khachThueWithHopDong = khachThue.map((kt: any) => {
+    // Tìm hợp đồng hiện tại cho khách thuê này
+    const hopDongHienTai = hopDong.find((hd: any) => {
+      const khachThueIds = Array.isArray(hd.khachThueId) ? hd.khachThueId : [hd.khachThueId];
+      const ngayBatDau = hd.ngayBatDau ? new Date(hd.ngayBatDau) : null;
+      const ngayKetThuc = hd.ngayKetThuc ? new Date(hd.ngayKetThuc) : null;
+      return (khachThueIds.includes(kt._id) || hd.nguoiDaiDien === kt._id) &&
+             hd.trangThai === 'hoatDong' &&
+             ngayBatDau && ngayBatDau <= now &&
+             ngayKetThuc && ngayKetThuc >= now;
+    });
+    
+    // Populate hopDongHienTai nếu có
+    let hopDongHienTaiPopulated = null;
+    if (hopDongHienTai) {
+      const phongData = hopDongHienTai.phong ? phongMap.get(hopDongHienTai.phong) : null;
+      const toaNhaData = phongData?.toaNha ? toaNhaMap.get(phongData.toaNha) : null;
+      
+      const khachThueIds = Array.isArray(hopDongHienTai.khachThueId) 
+        ? hopDongHienTai.khachThueId 
+        : [hopDongHienTai.khachThueId];
+      
+      const khachThueList = khachThueIds
+        .map((id: string) => khachThueMap.get(id))
+        .filter(Boolean)
+        .map((ktItem: any) => ({
+          _id: ktItem._id,
+          hoTen: ktItem.hoTen || ktItem.ten,
+          soDienThoai: ktItem.soDienThoai,
+        }));
+      
+      const nguoiDaiDienData = hopDongHienTai.nguoiDaiDien 
+        ? khachThueMap.get(hopDongHienTai.nguoiDaiDien)
+        : null;
+      
+      hopDongHienTaiPopulated = {
+        ...hopDongHienTai,
+        phong: phongData ? {
+          _id: phongData._id,
+          maPhong: phongData.maPhong,
+          toaNha: toaNhaData ? {
+            _id: toaNhaData._id,
+            tenToaNha: toaNhaData.tenToaNha,
+            diaChi: toaNhaData.diaChi,
+          } : null,
+        } : null,
+        khachThueId: khachThueList,
+        nguoiDaiDien: nguoiDaiDienData ? {
+          _id: nguoiDaiDienData._id,
+          hoTen: nguoiDaiDienData.hoTen || nguoiDaiDienData.ten,
+          soDienThoai: nguoiDaiDienData.soDienThoai,
+        } : null,
+      };
+    }
+    
+    return {
+      ...kt,
+      hopDongHienTai: hopDongHienTaiPopulated,
+    };
+  });
+
   return {
     toaNha: toaNhaNormalized,
     phong: phongWithToaNha,
-    khachThue,
+    khachThue: khachThueWithHopDong,
     hopDong: hopDongWithRelations,
     hoaDon: hoaDonWithHopDong,
     thanhToan: thanhToanWithHoaDon,
